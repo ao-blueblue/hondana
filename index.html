@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>わたしの本棚</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0e1526">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="本棚">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* 星と雷：紺の地、金は「自分のもの」（書名・冊数・枠）、青は「操作・気づき」（切替・抜け巻・スキャン） */
+:root{--bg:#0e1526;--p1:#121b30;--p2:#141d33;--line:#24304a;--line2:#1c2640;--ctl:#2e3a55;--ink:#e8e6df;--mut:#a3a8b8;--mut2:#8a93ab;--gold:#d2b06a;--blue:#5aa8f0;
+--serif:"Shippori Mincho","Hiragino Mincho ProN",serif;--sans:"Zen Kaku Gothic New","Hiragino Sans",system-ui,sans-serif;
+--st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%;background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 var(--sans);overflow-x:clip;-webkit-tap-highlight-color:transparent}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--gold);text-decoration:none}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.wrap{max-width:760px;margin:0 auto}
+/* 上部 */
+.top{padding:calc(20px + var(--st)) 20px 14px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:12px;background:var(--bg)}
+.hrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+h1{margin:0;font:700 27px/1.1 var(--serif);letter-spacing:.08em;color:var(--gold)}
+.stats{margin:4px 0 0;font-size:13px;color:var(--mut)}
+.icon-btn{width:44px;height:44px;border-radius:10px;border:1px solid var(--ctl);background:transparent;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.search{display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;border:1px solid var(--ctl);border-radius:10px;background:var(--p1)}
+.search input{flex:1;background:transparent;border:0;outline:0;font-size:16px}
+.chips{display:flex;gap:8px;align-items:center;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.chips::-webkit-scrollbar{display:none}
+.chip{height:36px;padding:0 14px;border-radius:999px;border:1px solid var(--ctl);background:transparent;color:#c9cfdc;font-size:14px;white-space:nowrap;flex:none}
+.chip[aria-pressed=true]{border-color:var(--gold);color:var(--gold)}
+.sel{height:36px;border-radius:999px;border:1px solid var(--ctl);background:var(--bg);color:#c9cfdc;font-size:14px;padding:0 10px;flex:none}
+.vt[aria-pressed=true]{border-color:var(--blue)}
+.note{font-size:12px;color:var(--mut2)}
+.backup{margin:12px 20px 0;padding:10px 14px;border:1px solid var(--line);border-radius:10px;font-size:13px;color:var(--mut);display:flex;gap:10px;align-items:center;justify-content:space-between}
+/* 表紙グリッド */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:18px 14px;padding:18px 20px calc(110px + var(--sb))}
+.tile{display:flex;flex-direction:column;gap:6px;background:none;border:0;padding:0;text-align:left;color:inherit}
+.cv{position:relative;aspect-ratio:2/3;border-radius:3px;overflow:hidden;display:flex;padding:10px 8px;font:700 13px/1.3 var(--serif);width:100%}
+.cv img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.stack{position:relative;padding:6px 6px 0 0}
+.stack::before{content:"";position:absolute;right:0;top:0;width:calc(100% - 6px);height:calc(100% - 6px);background:#1d2740;border-radius:3px}
+.badge{position:absolute;right:10px;bottom:6px;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--bg);color:var(--gold);border:1px solid var(--gold);z-index:2}
+.miss{position:absolute;left:-3px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--blue);border:2px solid var(--bg);z-index:2}
+.fmt{position:absolute;left:4px;bottom:4px;font:700 10px/1 var(--sans);padding:3px 4px;border-radius:3px;background:rgba(14,21,38,.85);color:var(--blue);z-index:2}
+.tt{font-size:12px;color:#b8bfd0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sold .cv{filter:grayscale(.8);opacity:.5}
+/* 背表紙の棚 */
+.shelf{margin:16px;padding:16px 12px 0;background:#0a101e;border:1px solid #1f2a44;border-radius:10px;margin-bottom:calc(110px + var(--sb))}
+.srow{display:flex;flex-wrap:wrap;gap:14px 3px;padding-bottom:14px;background:linear-gradient(to bottom,transparent 0 176px,var(--gold) 176px 179px,#141d33 179px 190px) 0 0/100% 190px repeat-y}
+.slot{height:176px;display:flex;align-items:flex-end}
+.sp{width:34px;border-radius:2px 2px 1px 1px;display:flex;justify-content:center;padding-top:10px;border:0}
+.sp span{writing-mode:vertical-rl;font:700 13px var(--serif);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.empty{padding:56px 24px;text-align:center;color:var(--mut)}
+.empty b{display:block;font:700 21px/1.4 var(--serif);color:var(--gold);margin-bottom:8px}
+/* 詳細画面 */
+.page{padding:calc(12px + var(--st)) 20px calc(40px + var(--sb))}
+.back{display:inline-flex;align-items:center;gap:6px;height:44px;font-size:15px;color:var(--gold);background:none;border:0;padding:0}
+.hero{display:flex;gap:18px;padding:10px 0 20px;border-bottom:1px solid var(--line)}
+.hero .cvbox{width:96px;flex:none}
+.hero h2{margin:0;font:700 23px/1.3 var(--serif)}
+.sub{margin:4px 0 0;font-size:13px;color:var(--mut)}
+.vols{display:grid;grid-template-columns:repeat(auto-fill,minmax(50px,1fr));gap:8px}
+.vol{position:relative;aspect-ratio:2/3;border-radius:3px;overflow:hidden;border:0;padding:0;background:#3d5f86}
+.vol img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.vol .n{position:absolute;right:3px;bottom:3px;font:700 12px/1 var(--sans);padding:2px 4px;border-radius:3px;background:rgba(14,21,38,.85);color:var(--ink)}
+.vol.gap{background:transparent;border:1.5px dashed var(--blue);color:var(--blue);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px}
+.vol.gap b{font-size:15px}
+h3{margin:20px 0 10px;font-size:14px;font-weight:500;color:var(--mut)}
+.info{margin-top:6px}
+.ir{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--line2);font-size:14px}
+.ir:last-child{border-bottom:0}.ir span:first-child{color:var(--mut);flex:none}.ir span:last-child{text-align:right;overflow-wrap:anywhere}
+.seg{display:flex;gap:4px;padding:4px;border:1px solid var(--ctl);border-radius:10px;margin-top:4px}
+.seg button{flex:1;height:40px;border:0;border-radius:8px;background:transparent;color:#c9cfdc;font-size:14px}
+.seg button[aria-pressed=true]{background:var(--blue);color:#081020;font-weight:700}
+.btn{min-height:48px;padding:0 18px;border-radius:12px;border:1px solid var(--ctl);background:transparent;color:#c9cfdc;font-size:15px}
+.btn.gold{border-color:var(--gold);background:var(--p2);color:var(--gold);font-family:var(--serif);font-weight:700;letter-spacing:.06em}
+.btn.blue{border-color:var(--blue);background:var(--blue);color:#081020;font-weight:700}
+.btn.danger{border-color:#8a3b3b;color:#f0a0a0}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>.btn{flex:1}
+.fab{position:fixed;right:max(18px,calc(50% - 362px));bottom:calc(20px + var(--sb));height:56px;padding:0 22px;border-radius:999px;border:1px solid var(--gold);background:var(--p2);color:var(--gold);font:700 15px var(--serif);letter-spacing:.08em;display:flex;align-items:center;gap:10px;box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:5}
+/* シート */
+.veil{position:fixed;inset:0;background:rgba(4,7,14,.7);display:none;align-items:flex-end;justify-content:center;z-index:20}
+.veil.on{display:flex}
+.sheet{background:var(--bg);border:1px solid var(--line);border-bottom:0;border-radius:18px 18px 0 0;width:min(640px,100%);max-height:92vh;overflow-y:auto;padding:18px 20px calc(24px + var(--sb))}
+.sheet h2{margin:0 0 12px;font:700 21px/1.3 var(--serif);color:var(--gold);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.x{width:44px;height:44px;border:0;background:none;color:var(--mut);font-size:26px;flex:none}
+.fgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.fgrid .full{grid-column:1/-1}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
+label.f input,label.f select,label.f textarea{min-height:44px;padding:8px 12px;border:1px solid var(--ctl);border-radius:10px;background:var(--p1);font-size:16px;color:var(--ink);width:100%}
+label.f input[type=date]{-webkit-appearance:none;appearance:none}
+.msg{font-size:14px;margin:10px 0 0;min-height:1.4em;color:var(--mut)}
+.msg.warn{color:var(--blue);font-weight:700}
+.cam{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3}
+.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.cam .frame{position:absolute;left:8%;right:8%;top:30%;bottom:30%;border:2px solid var(--blue);border-radius:10px;box-shadow:0 0 0 999px rgba(0,0,0,.4)}
+.chk{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--mut);margin-top:12px;min-height:44px}
+.chk input{width:22px;height:22px;accent-color:var(--blue)}
+.added{margin:10px 0 0;padding:0;list-style:none;max-height:28vh;overflow:auto}
+.added li{padding:8px 0;border-bottom:1px solid var(--line2);font-size:14px;display:flex;gap:10px;align-items:center}
+.added .mini{width:26px;height:38px;flex:none}
+.opt{display:flex;gap:14px;align-items:center;width:100%;text-align:left;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--p1);margin-bottom:10px;min-height:64px}
+.opt b{display:block;font-size:15px;color:var(--ink)}.opt span{font-size:13px;color:var(--mut)}
+.imp-list{max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:12px}
+.imp-list label{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-bottom:1px solid var(--line2);font-size:14px}
+.imp-list input{width:20px;height:20px;margin-top:2px;flex:none;accent-color:var(--blue)}
+.tag{font-size:11px;color:var(--blue);font-weight:700;white-space:nowrap}
+.toast{position:fixed;left:50%;bottom:calc(90px + var(--sb));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;display:none;gap:14px;align-items:center;z-index:30;max-width:92vw;font-size:14px}
+.toast.on{display:flex}.toast button{background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;min-height:34px;padding:0 10px}
+textarea{resize:vertical}
+@media(prefers-reduced-motion:no-preference){.tile .cv{transition:transform .15s}.tile:active .cv{transform:scale(.97)}}
+</style>
+<script src="zxing.min.js" defer></script>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<button class="fab" id="fab" aria-label="バーコードで本を追加">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L5 14h6l-2 8 10-13h-6z"/></svg>バーコードで追加</button>
+
+<!-- スキャン -->
+<div class="veil" id="vScan" role="dialog" aria-modal="true" aria-labelledby="scanT">
+  <div class="sheet">
+    <h2><span id="scanT">バーコードを読む</span><button class="x" data-close aria-label="閉じる">×</button></h2>
+    <div class="cam"><video id="video" playsinline muted autoplay></video><div class="frame"></div></div>
+    <p class="msg" id="scanMsg" aria-live="polite"></p>
+    <label class="chk"><input type="checkbox" id="scanCont" checked> 続けて登録する（読むたびに本棚へ追加）</label>
+    <div class="fgrid" style="margin-top:4px">
+      <label class="f">形態<select id="scanFmt"></select></label>
+      <label class="f">置き場所<input id="scanPlace" list="places" autocomplete="off" placeholder="寝室の本棚 上段"></label>
+    </div>
+    <ul class="added" id="scanList"></ul>
+    <div class="row" style="margin-top:14px">
+      <label class="btn" for="photoIn" style="display:flex;align-items:center;justify-content:center">写真から読む</label>
+      <button class="btn" id="toManual">手で入力する</button>
+    </div>
+    <input type="file" id="photoIn" accept="image/*" hidden>
+    <div class="row" style="margin-top:10px"><button class="btn gold" data-close>終わる</button></div>
+  </div>
+</div>
+
+<!-- 編集 -->
+<div class="veil" id="vEdit" role="dialog" aria-modal="true" aria-labelledby="editT">
+  <form class="sheet" id="editForm" novalidate>
+    <h2><span id="editT">本を追加</span><button type="button" class="x" data-close aria-label="閉じる">×</button></h2>
+    <div class="fgrid">
+      <label class="f full">ISBN<input id="fIsbn" inputmode="numeric" autocomplete="off" placeholder="978から始まる13桁（入れると書名を調べます）"></label>
+      <label class="f full">書名<input id="fTitle" autocomplete="off"></label>
+      <label class="f">著者<input id="fAuthor" autocomplete="off"></label>
+      <label class="f">出版社<input id="fPub" autocomplete="off"></label>
+      <label class="f">シリーズ名<input id="fSeries" autocomplete="off" placeholder="自動で判定"></label>
+      <label class="f">巻<input id="fVol" inputmode="numeric" autocomplete="off"></label>
+      <label class="f">ジャンル<select id="fGenre"></select></label>
+      <label class="f">形態<select id="fFmt"></select></label>
+      <label class="f">出版日<input id="fPubdate" autocomplete="off" placeholder="2019-07"></label>
+      <label class="f">購入日<input id="fBought" type="date"></label>
+      <label class="f">置き場所<input id="fPlace" list="places" autocomplete="off"></label>
+      <label class="f">読書<select id="fRead"><option>積読</option><option>読書中</option><option>読了</option></select></label>
+      <label class="f" id="fReadAtBox">読了日<input id="fReadAt" type="date"></label>
+      <label class="f full">メモ<textarea id="fMemo" rows="2"></textarea></label>
+      <div class="full" id="soldBox">
+        <div class="fgrid">
+          <label class="f">売った日<input id="fSoldAt" type="date"></label>
+          <label class="f">売った先<input id="fSoldTo" placeholder="ブックオフ、メルカリ"></label>
+          <label class="f">金額（円）<input id="fSoldPrice" inputmode="numeric"></label>
+        </div>
+      </div>
+    </div>
+    <p class="msg" id="editMsg" aria-live="polite"></p>
+    <div class="row" style="margin-top:14px"><button type="submit" class="btn gold">保存</button></div>
+  </form>
+</div>
+
+<!-- メニュー -->
+<div class="veil" id="vMenu" role="dialog" aria-modal="true" aria-labelledby="menuT">
+  <div class="sheet">
+    <h2><span id="menuT">メニュー</span><button class="x" data-close aria-label="閉じる">×</button></h2>
+    <button class="opt" id="mKindle"><span><b>Kindleの本を取り込む</b><span>Kindle bookshelf exporter で書き出したCSVやJSONを読み込みます</span></span></button>
+    <button class="opt" id="mPaste"><span><b>BOOK☆WALKERなどを貼り付けで取り込む</b><span>本棚ページの文字をコピーして貼り付けます</span></span></button>
+    <button class="opt" id="mManual"><span><b>手で1冊追加する</b><span>バーコードのない本や、調べても出てこない本に</span></span></button>
+    <h3>バックアップ</h3>
+    <button class="opt" id="mExport"><span><b>CSVで書き出す</b><span id="lastBk">全部の本をファイルに保存します</span></span></button>
+    <button class="opt" id="mRestore"><span><b>CSVを読み込む</b><span>書き出したCSVから本棚を戻します（登録済みの本は飛ばします）</span></span></button>
+    <input type="file" id="fileIn" accept=".csv,.json,.txt,text/csv,application/json" hidden>
+    <p class="note">本のデータはこのiPhoneの中だけに保存されます。書名を調べるときだけ、ISBNを openBD・Google Books・国立国会図書館に問い合わせます。</p>
+  </div>
+</div>
+
+<!-- 取り込み確認 -->
+<div class="veil" id="vImp" role="dialog" aria-modal="true" aria-labelledby="impT">
+  <div class="sheet">
+    <h2><span id="impT">取り込み</span><button class="x" data-close aria-label="閉じる">×</button></h2>
+    <div id="pasteBox">
+      <p class="note">ストアの本棚ページで、全体を選んでコピーし、ここに貼り付けてください。本ではない行はあとでチェックを外せます（外した行は覚えて、次から出しません）。</p>
+      <label class="f" style="margin-top:8px">どこの本？<select id="impFmt"></select></label>
+      <label class="f" style="margin-top:10px">貼り付け<textarea id="impText" rows="6"></textarea></label>
+      <div class="row" style="margin-top:10px"><button class="btn blue" id="impParse">本を読み取る</button></div>
+    </div>
+    <p class="msg" id="impMsg"></p>
+    <div id="impPrev" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px"><span class="note" id="impSum"></span><button class="btn" id="impAll" style="min-height:36px;flex:none">全部選ぶ／外す</button></div>
+      <div class="imp-list" id="impList"></div>
+      <div class="row" style="margin-top:14px"><button class="btn gold" id="impAdd">追加する</button></div>
+    </div>
+  </div>
+</div>
+
+<datalist id="places"></datalist>
+<div class="toast" id="toast" role="status"><span id="tMsg"></span><button id="tUndo" hidden>元に戻す</button></div>
+
+<script src="app.js"></script>
+</body>
+</html>
