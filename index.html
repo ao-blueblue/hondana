@@ -56,6 +56,8 @@ h1{margin:0;font:700 27px/1.1 var(--serif);letter-spacing:.08em;color:var(--gold
 .badge{position:absolute;right:10px;bottom:6px;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--bg);color:var(--gold);border:1px solid var(--gold);z-index:2}
 .miss{position:absolute;left:-3px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--blue);border:2px solid var(--bg);z-index:2}
 .fmt{position:absolute;left:4px;bottom:4px;font:700 10px/1 var(--sans);padding:3px 4px;border-radius:3px;background:rgba(14,21,38,.85);color:var(--blue);z-index:2}
+.cv.nocv::after{content:"表紙なし";position:absolute;right:4px;bottom:4px;font:700 10px/1 var(--sans);padding:3px 5px;border-radius:3px;background:rgba(14,21,38,.85);color:var(--blue);z-index:2}
+.mini .cv.nocv::after,.vol .cv.nocv::after,.stack .cv.nocv::after{display:none}
 .tt{font-size:12px;color:#b8bfd0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sold .cv{filter:grayscale(.8);opacity:.5}
 /* 背表紙の棚 */
@@ -142,6 +144,7 @@ textarea{resize:vertical}
     <div class="fgrid" style="margin-top:4px">
       <label class="f">形態<select id="scanFmt"></select></label>
       <label class="f">置き場所<input id="scanPlace" list="places" autocomplete="off" placeholder="寝室の本棚 上段"></label>
+      <label class="f full">読んだ？（この棚の本にまとめて付けます）<select id="scanRead"><option value="">未設定のまま</option><option>読んだ</option><option>まだ</option></select></label>
     </div>
     <ul class="added" id="scanList"></ul>
     <div class="row" style="margin-top:14px">
@@ -169,8 +172,8 @@ textarea{resize:vertical}
       <label class="f">出版日<input id="fPubdate" autocomplete="off" placeholder="2019-07"></label>
       <label class="f">購入日<input id="fBought" type="date"></label>
       <label class="f">置き場所<input id="fPlace" list="places" autocomplete="off"></label>
-      <label class="f">読書<select id="fRead"><option>積読</option><option>読書中</option><option>読了</option></select></label>
-      <label class="f" id="fReadAtBox">読了日<input id="fReadAt" type="date"></label>
+      <label class="f">読んだ？<select id="fRead"><option value="">未設定</option><option>読んだ</option><option>まだ</option></select></label>
+      <label class="f" id="fReadAtBox">読み終えた日（空でもOK）<input id="fReadAt" type="date"></label>
       <label class="f full">メモ<textarea id="fMemo" rows="2"></textarea></label>
       <div class="full" id="soldBox">
         <div class="fgrid">
@@ -193,8 +196,10 @@ textarea{resize:vertical}
     <button class="opt" id="mPaste"><span><b>BOOK☆WALKERなどを貼り付けで取り込む</b><span>本棚ページの文字をコピーして貼り付けます</span></span></button>
     <button class="opt" id="mManual"><span><b>手で1冊追加する</b><span>バーコードのない本や、調べても出てこない本に</span></span></button>
     <h3>バックアップ</h3>
-    <button class="opt" id="mExport"><span><b>CSVで書き出す</b><span id="lastBk">全部の本をファイルに保存します</span></span></button>
-    <button class="opt" id="mRestore"><span><b>CSVを読み込む</b><span>書き出したCSVから本棚を戻します（登録済みの本は飛ばします）</span></span></button>
+    <p class="note" id="lastBk" style="margin:0 0 10px"></p>
+    <button class="opt" id="mFull"><span><b>まるごとバックアップ（写真の表紙も）</b><span>機種変更のときはこれ。写真で付けた表紙も一緒に保存します</span></span></button>
+    <button class="opt" id="mExport"><span><b>CSVで書き出す</b><span>表計算ソフトでも開ける形。写真の表紙は入りません</span></span></button>
+    <button class="opt" id="mRestore"><span><b>バックアップから戻す</b><span>まるごとバックアップやCSVを読み込みます（登録済みの本は飛ばします）</span></span></button>
     <input type="file" id="fileIn" accept=".csv,.json,.txt,text/csv,application/json" hidden>
     <p class="note">本のデータはこのiPhoneの中だけに保存されます。書名を調べるときだけ、ISBNを openBD・Google Books・国立国会図書館に問い合わせます。</p>
   </div>
