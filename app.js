@@ -48,6 +48,7 @@ function genreFromText(...xs) {
 const KANJI_VOL = { '上': 1, '中': 2, '下': 3, '前編': 1, '後編': 2, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 };
 function parseSeries(title) {
   let t = nfkc(title).trim();
+  t = t.replace(/\s+=\s+.*?(?=[\s.　]*(?:第?\(?\d{1,4}\)?巻?|vol\.?\s*\d+|上|中|下)?\s*$)/i, '').replace(/\s*\.\s*(?=\d+\s*$)/, ' ').trim();
   t = t.replace(/\s*[(（][^()（）]*(コミックス|comics|文庫|新書|ノベルス|books|ブックス|レーベル|kc|ジャンプ|サンデー|マガジン|デジタル版|電子版)[^()（）]*[)）]\s*$/i, '').trim();
   const pats = [
     /^(.+?)[\s　]*第?[（(]?\s*(\d{1,4})\s*[)）]?\s*巻?$/,
@@ -112,19 +113,22 @@ function cleanAuthor(a) {
     .map(p => /[぀-ヿ一-鿿]/.test(p) ? p.replace(/[,，]\s*/g, '') : p.split(/,\s*/).reverse().join(' '))
     .filter((v, i, arr) => arr.indexOf(v) === i).join('・');
 }
-function cleanTitle(t, vol) { t = nfkc(t).replace(/\s+/g, ' ').replace(/\s*:\s*\[[^\]]*\]/g, '').replace(/\[[^\]]*\]/g, '').replace(/\s+\./g, '.').trim(); if (vol && !t.includes(vol)) t += ' ' + vol; return t; }
+function cleanTitle(t, vol) { t = nfkc(t).replace(/\s+/g, ' ').replace(/\s+=\s+.*?(?=[\s.]*(?:\d{1,4}|上|中|下)?\s*$)/, '').replace(/\s*:\s*\[[^\]]*\]/g, '').replace(/\[[^\]]*\]/g, '').replace(/\s+\./g, '.').trim(); if (vol && !t.includes(vol)) t += ' ' + vol; return t; }
 function normPubdate(s) { const m = nfkc(s).match(/(\d{4})[-.\/年]?(\d{1,2})?[-.\/月]?(\d{1,2})?/); if (!m) return ''; return m[1] + (m[2] ? '-' + m[2].padStart(2, '0') : '') + (m[3] ? '-' + m[3].padStart(2, '0') : ''); }
 async function fetchJson(u, ms = 8000) { const c = new AbortController(), t = setTimeout(() => c.abort(), ms); try { const r = await fetch(u, { signal: c.signal }); if (!r.ok) throw 0; return await r.json(); } finally { clearTimeout(t); } }
 async function fetchText(u, ms = 8000) { const c = new AbortController(), t = setTimeout(() => c.abort(), ms); try { const r = await fetch(u, { signal: c.signal }); if (!r.ok) throw 0; return await r.text(); } finally { clearTimeout(t); } }
 async function fromOpenBD(isbn) {
   const j = await fetchJson('https://api.openbd.jp/v1/get?isbn=' + isbn); const it = j && j[0]; if (!it || !it.summary || !it.summary.title) return null;
-  const s = it.summary; let ccode = '';
+  const s = it.summary; if (s.isbn && nfkc(s.isbn).replace(/\D/g, '') !== isbn) return null;
+  let ccode = '';
   try { (it.onix.DescriptiveDetail.Subject || []).forEach(x => { if (x.SubjectSchemeIdentifier === '78' && /^\d{4}$/.test(x.SubjectCode)) ccode = x.SubjectCode; }); } catch (e) {}
   return { title: cleanTitle(s.title, s.volume), author: cleanAuthor(s.author), publisher: s.publisher || '', pubdate: normPubdate(s.pubdate), cover: httpsUrl(s.cover), series: s.series || '', genre: genreFromC(ccode) };
 }
 async function fromNDL(isbn) {
   const x = await fetchText('https://ndlsearch.ndl.go.jp/api/opensearch?isbn=' + isbn); const d = new DOMParser().parseFromString(x, 'application/xml'); const item = d.querySelector('item'); if (!item) return null;
   const g = sel => { const e = item.getElementsByTagName(sel)[0]; return e ? e.textContent.trim() : ''; };
+  const ids = [...item.getElementsByTagName('dc:identifier')].map(e => nfkc(e.textContent).replace(/[^0-9X]/gi, '').toUpperCase());
+  if (!ids.some(v => v === isbn || v === isbn10(isbn))) return null;
   const title = g('dc:title') || g('title'); if (!title) return null;
   const vol = g('dcndl:volume'); const subj = [...item.getElementsByTagName('dc:subject')].map(e => e.textContent).join(' ');
   let genre = ''; const ndc = (subj.match(/\b(\d{3}(?:\.\d+)?)\b/) || [])[1] || '';
@@ -132,7 +136,9 @@ async function fromNDL(isbn) {
   return { title: cleanTitle(title, vol), author: cleanAuthor(g('dc:creator') || g('author')), publisher: g('dc:publisher'), pubdate: normPubdate(g('dcterms:issued') || g('dc:date')), cover: '', series: g('dcndl:seriesTitle'), genre };
 }
 async function fromGoogle(isbn) {
-  const j = await fetchJson('https://www.googleapis.com/books/v1/volumes?q=isbn:' + isbn); const v = j && j.items && j.items[0] && j.items[0].volumeInfo; if (!v || !v.title) return null;
+  const j = await fetchJson('https://www.googleapis.com/books/v1/volumes?q=isbn:' + isbn);
+  const hit = (j && j.items || []).find(it => (it.volumeInfo && it.volumeInfo.industryIdentifiers || []).some(x => { const v = String(x.identifier || '').replace(/[^0-9X]/gi, '').toUpperCase(); return v === isbn || v === isbn10(isbn); }));
+  const v = hit && hit.volumeInfo; if (!v || !v.title) return null;
   return { title: v.title + (v.subtitle ? ' ' + v.subtitle : ''), author: (v.authors || []).join('・'), publisher: v.publisher || '', pubdate: normPubdate(v.publishedDate), cover: httpsUrl(v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail)).replace('&edge=curl', ''), series: '', genre: genreFromText((v.categories || []).join(' ')) };
 }
 async function lookup(isbn) {
@@ -243,11 +249,16 @@ function groups() {
   out.sort(ui.sort === 'title' ? (a, b) => String(name(a)).localeCompare(String(name(b)), 'ja') : (a, b) => latest(b) - latest(a));
   return out;
 }
-function missingVols(bs) {
-  const vs = [...new Set(bs.filter(b => b.status !== 'sold' && b.vol).map(b => +b.vol))].sort((a, b) => a - b);
-  if (vs.length < 2 && !(vs.length === 1 && vs[0] > 1)) return { max: vs[vs.length - 1] || 0, miss: [] };
-  const max = vs[vs.length - 1], miss = []; for (let i = 1; i <= max; i++) if (!vs.includes(i)) miss.push(i);
-  return { max, miss: miss.length > 30 ? [] : miss };
+// シリーズごとの「全○巻」は自分で入れる（どのデータベースにも確かな情報がないため）
+let serInfo = (() => { try { return JSON.parse(lsGet('hondana.series', '{}')) || {}; } catch (e) { return {}; } })();
+const saveSerInfo = () => lsSet('hondana.series', JSON.stringify(serInfo));
+const totalOf = key => +(serInfo[key] && serInfo[key].total) || 0;
+function missingVols(bs, key) {
+  const vs = [...new Set(bs.filter(b => b.status !== 'sold' && b.vol).map(b => +b.vol))].sort((a, b) => a - b), total = totalOf(key ?? seriesKey(bs[0] || {}));
+  const top = Math.max(vs[vs.length - 1] || 0, total);
+  if (!total && vs.length < 2 && !(vs.length === 1 && vs[0] > 1)) return { max: top, miss: [], total };
+  const miss = []; for (let i = 1; i <= top; i++) if (!vs.includes(i)) miss.push(i);
+  return { max: top, miss: miss.length > 60 ? [] : miss, total };
 }
 function resultsHtml() {
   const gs = groups();
@@ -263,7 +274,7 @@ function resultsHtml() {
   return `<div class="grid">${gs.map(g => {
     if (g.one) { const b = g.one; return `<button class="tile${b.status === 'sold' ? ' sold' : ''}" data-book="${esc(b.id)}"><div style="position:relative">${coverHtml(b)}${FMARK[b.format] ? `<span class="fmt">${FMARK[b.format]}</span>` : ''}</div><span class="tt">${esc(b.title || 'ISBN ' + b.isbn)}</span></button>`; }
     const bs = g.books.slice().sort((a, b) => (a.vol || 0) - (b.vol || 0)), top = (bs.find(b => photos.has(b.id)) || bs.find(b => b.cover && !/ndlsearch/.test(b.cover)) || bs.find(b => b.isbn || b.asin) || bs[0]), m = missingVols(bs);
-    return `<button class="tile" data-series="${esc(g.key)}"><div class="stack">${coverHtml({ ...top, title: bs[0].series })}<span class="badge">${bs.length}冊</span>${m.miss.length ? '<span class="miss" title="抜けている巻があります"></span>' : ''}</div><span class="tt">${esc(bs[0].series)}</span></button>`;
+    return `<button class="tile" data-series="${esc(g.key)}"><div class="stack">${coverHtml({ ...top, title: bs[0].series })}<span class="badge">${m.total ? `${bs.filter(b => b.status !== 'sold').length}/${m.total}` : bs.length + '冊'}</span>${m.miss.length ? '<span class="miss" title="抜けている巻があります"></span>' : ''}</div><span class="tt">${esc(bs[0].series)}</span></button>`;
   }).join('')}</div>`;
 }
 function renderHome() {
@@ -304,7 +315,7 @@ function infoRows(rows) { return `<div class="info">${rows.filter(r => r[1]).map
 function renderSeries(key) {
   const bs = [...books.values()].filter(b => seriesKey(b) === key).sort((a, b) => (a.vol || 1e9) - (b.vol || 1e9) || (a.addedAt - b.addedAt));
   if (!bs.length) { location.hash = ''; return; }
-  const own = bs.filter(b => b.status !== 'sold'), m = missingVols(bs), name = bs[0].series;
+  const own = bs.filter(b => b.status !== 'sold'), m = missingVols(bs, key), name = bs[0].series;
   const authors = [...new Set(bs.flatMap(b => String(b.author || '').split(/[・、]/)).map(x => x.trim()).filter(Boolean))].slice(0, 3).join('・');
   const fm = [...new Set(own.map(b => b.format))].join('・'), places = [...new Set(own.map(b => b.place).filter(Boolean))].join('、');
   const pubs = [...new Set(bs.map(b => b.publisher).filter(Boolean))].join('、');
@@ -322,16 +333,18 @@ function renderSeries(key) {
     <div class="hero"><div class="cvbox"><div class="stack">${coverHtml({ ...top, title: name })}</div></div>
       <div style="display:flex;flex-direction:column;justify-content:center;gap:2px">
         <h2>${esc(name)}</h2>${authors ? `<p class="sub">${esc(authors)}</p>` : ''}
-        <p style="margin:8px 0 0;font-size:14px">${m.max ? `${m.max}巻まで、` : ''}<b style="color:var(--gold)">${own.length}冊</b> 持っています</p>
+        <p style="margin:8px 0 0;font-size:14px">${m.total ? `全${m.total}巻のうち ` : m.max ? `${m.max}巻まで、` : ''}<b style="color:var(--gold)">${own.length}冊</b> 持っています${m.total && !m.miss.length && own.length >= m.total ? '<br><span style="color:var(--gold)">全巻そろっています</span>' : ''}</p>
         ${m.miss.length ? `<p style="margin:2px 0 0;font-size:13px;color:var(--blue);font-weight:700">${m.miss.length > 4 ? m.miss.slice(0, 4).join('・') + '巻ほか' : m.miss.join('・') + '巻'}がありません</p>` : ''}
       </div></div>
     <h3>巻</h3><div class="vols">${tiles.join('')}</div>
     ${infoRows([['形態', esc(fm)], ['置き場所', esc(places)], ['出版社', esc(pubs)]])}
+    <label class="ir" style="align-items:center"><span>全何巻？</span><span style="display:flex;align-items:center;gap:6px">全<input id="serTotal" inputmode="numeric" value="${m.total || ''}" placeholder="${m.max || ''}" style="width:64px;height:40px;border:1px solid var(--ctl);border-radius:8px;background:var(--p1);text-align:center;font-size:16px">巻</span></label>
     <label class="ir" style="align-items:center"><span>ジャンル（全巻）</span><select id="serGenre" class="sel" style="height:40px">${GENRES.map(g => `<option ${g === (bs.find(b => b.genre !== 'その他') || bs[0]).genre ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
     <div class="row" style="margin-top:20px"><button class="btn gold" id="addNext">${m.miss.length ? m.miss[0] : (m.max || own.length) + 1}巻をバーコードで追加</button></div>
     <p class="note" style="margin-top:12px">巻の表紙を押すと、その1冊の詳しい情報が開きます。シリーズ名や巻数は1冊ごとの「編集」で直せます。</p>
   </div>`;
   $('addNext').onclick = () => openScan({ format: own[0]?.format, place: own[0]?.place, genre: (bs.find(b => b.genre !== 'その他') || {}).genre });
+  $('serTotal').onchange = e => { const n = parseInt(nfkc(e.target.value), 10); if (n > 0 && n < 2000) serInfo[key] = { ...(serInfo[key] || {}), total: n }; else if (serInfo[key]) delete serInfo[key].total; saveSerInfo(); render(); };
   $('serGenre').onchange = e => { putMany(bs.map(b => ({ ...b, genre: e.target.value }))); toast(`このシリーズを全部「${e.target.value}」にしました`); };
 }
 function renderBook(id) {
@@ -354,10 +367,19 @@ function renderBook(id) {
     ${infoRows([['読み終えた日', b.read === '読んだ' && b.readAt ? jdate(b.readAt) : ''], ['シリーズ', b.series ? esc(b.series) + (b.vol ? ` ${b.vol}巻` : '') : ''], ['出版社', esc(b.publisher)], ['出版日', jdate(b.pubdate)], ['形態', esc(b.format)], ['購入日', jdate(b.boughtAt)], ['置き場所', esc(b.place)], ['ジャンル', esc(b.genre)], ['ISBN', esc(b.isbn)],
       ['売った日', b.status === 'sold' ? jdate(b.soldAt) || '—' : ''], ['売った先', b.status === 'sold' ? esc(b.soldTo) : ''], ['金額', b.status === 'sold' && b.soldPrice ? b.soldPrice.toLocaleString() + '円' : ''], ['メモ', esc(b.memo).replace(/\n/g, '<br>')]])}
     <div class="row" style="margin-top:20px"><button class="btn" id="bSold">${b.status === 'sold' ? '持っているに戻す' : '売った'}</button><button class="btn gold" id="bEdit">編集</button></div>
-    <div class="row" style="margin-top:10px"><button class="btn danger" id="bDel">削除</button></div>
+    <div class="row" style="margin-top:10px">${b.isbn ? '<button class="btn" id="bRelook">情報を調べ直す</button>' : ''}<button class="btn danger" id="bDel">削除</button></div>
   </div>`;
   app.querySelectorAll('[data-read]').forEach(x => x.onclick = () => { const r = b.read === x.dataset.read ? '' : x.dataset.read, nb = { ...b, read: r, readAt: r === '読んだ' ? (b.readAt || (b.read === 'まだ' ? today() : '')) : '' }; put(nb); });
   $('bEdit').onclick = () => openEdit(b);
+  if ($('bRelook')) $('bRelook').onclick = async () => {
+    $('bRelook').disabled = true; $('bRelook').textContent = '調べています…';
+    lookCache.delete(b.isbn); const r = await lookup(b.isbn);
+    if (!r) { toast('このISBNの本は見つかりませんでした'); render(); return; }
+    const nb = bookFromLookup(b.isbn, r);
+    put({ ...b, title: nb.title || b.title, author: nb.author || b.author, publisher: nb.publisher || b.publisher, pubdate: nb.pubdate || b.pubdate, series: nb.series || b.series, vol: nb.vol ?? b.vol,
+      genre: b.genre && b.genre !== 'その他' ? b.genre : nb.genre, cover: nb.cover || b.cover });
+    if (noCov.delete(b.id)) saveNoCov(); toast(`「${nb.title || b.title}」として調べ直しました`);
+  };
   $('coverIn').onchange = async () => {
     const f = $('coverIn').files[0]; $('coverIn').value = ''; if (!f) return;
     try { const blob = await photoBlob(f); if (!blob) throw 0; await setPhoto(b.id, blob); put({ ...b, photo: true }); toast('表紙を付けました'); }
@@ -570,6 +592,7 @@ $('fileIn').addEventListener('change', async () => {
       if (j && j.app === 'hondana' && Array.isArray(j.books)) {
         const seen0 = new Set();
         cands = migrateOld(j.books).filter(b => !seen0.has(b.id) && seen0.add(b.id)).map(b => ({ b, dup: books.get(b.id) || findDup(b), photo: (j.covers || {})[b.id] || null }));
+        if (j.series && typeof j.series === 'object') { for (const [k, v] of Object.entries(j.series)) if (!serInfo[k] && v && +v.total > 0) serInfo[k] = { total: +v.total }; saveSerInfo(); }
         $('impT').textContent = 'まるごとバックアップから戻す'; $('pasteBox').hidden = true; $('impMsg').textContent = Object.keys(j.covers || {}).length ? '写真の表紙も一緒に戻します。' : '';
         showCands(); openV('vImp'); return;
       }
@@ -663,7 +686,7 @@ async function exportFull() {
   toast('まとめています…');
   const covers = {}; let m = new Map(); try { m = await idb.all(); } catch (e) {}
   for (const [k, blob] of m) if (books.has(k)) covers[k] = await toDataUrl(blob);
-  const data = { app: 'hondana', version: 2, exportedAt: new Date().toISOString(), books: [...books.values()], covers };
+  const data = { app: 'hondana', version: 2, exportedAt: new Date().toISOString(), books: [...books.values()], covers, series: serInfo };
   await saveFile('本棚まるごと_' + today() + '.json', new Blob([JSON.stringify(data)], { type: 'application/json' }), '写真の表紙も含めて書き出しました。「ファイル」アプリなどに保存しておいてください');
 }
 
