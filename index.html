@@ -198,6 +198,8 @@ textarea{resize:vertical}
     <button class="opt" id="mKindle"><span><b>Kindleの本を取り込む</b><span>Kindle bookshelf exporter で書き出したCSVやJSONを読み込みます</span></span></button>
     <button class="opt" id="mPaste"><span><b>BOOK☆WALKERなどを貼り付けで取り込む</b><span>本棚ページの文字をコピーして貼り付けます</span></span></button>
     <button class="opt" id="mManual"><span><b>手で1冊追加する</b><span>バーコードのない本や、調べても出てこない本に</span></span></button>
+    <button class="opt" id="mTrial"><span><b>お試しの本を選ぶ</b><span>無料版や1巻だけの本をまとめて「お試し」にして、普段の本棚から外します</span></span></button>
+    <button class="opt" id="mTrialDel"><span><b>お試しの本をまとめて削除</b><span>お試しにした本を見直して、いらないものを一気に消します</span></span></button>
     <button class="opt" id="mRegroup"><span><b>シリーズをまとめ直す</b><span>書名からシリーズと巻数を読み取り直します。バラバラになった巻がまとまります</span></span></button>
     <h3>バックアップ</h3>
     <p class="note" id="lastBk" style="margin:0 0 10px"></p>
@@ -205,7 +207,7 @@ textarea{resize:vertical}
     <button class="opt" id="mExport"><span><b>CSVで書き出す</b><span>表計算ソフトでも開ける形。写真の表紙は入りません</span></span></button>
     <button class="opt" id="mRestore"><span><b>バックアップから戻す</b><span>まるごとバックアップやCSVを読み込みます（登録済みの本は飛ばします）</span></span></button>
     <input type="file" id="fileIn" accept=".csv,.json,.txt,text/csv,application/json" hidden>
-    <p class="note" style="margin-bottom:4px">バージョン 2.7.0</p>
+    <p class="note" style="margin-bottom:4px">バージョン 2.9.0</p>
     <p class="note">本のデータはこのiPhoneの中だけに保存されます。書名を調べるときだけ、ISBNを openBD・Google Books・国立国会図書館に問い合わせます。</p>
   </div>
 </div>
@@ -229,9 +231,20 @@ textarea{resize:vertical}
   </div>
 </div>
 
+<!-- まとめて選ぶ -->
+<div class="veil" id="vBulk" role="dialog" aria-modal="true" aria-labelledby="bulkT">
+  <div class="sheet">
+    <h2><span id="bulkT">まとめて選ぶ</span><button class="x" data-close aria-label="閉じる">×</button></h2>
+    <p class="note" id="bulkNote"></p>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px"><span class="note" id="bulkSum"></span><button class="btn" id="bulkAll" style="min-height:36px;flex:none">全部選ぶ／外す</button></div>
+    <div class="imp-list" id="bulkList"></div>
+    <div class="row" style="margin-top:14px"><button class="btn gold" id="bulkGo">実行</button></div>
+  </div>
+</div>
+
 <datalist id="places"></datalist>
 <div class="toast" id="toast" role="status"><span id="tMsg"></span><button id="tUndo" hidden>元に戻す</button></div>
 
-<script src="app.js?v=2.7.0"></script>
+<script src="app.js?v=2.9.0"></script>
 </body>
 </html>
