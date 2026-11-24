@@ -102,6 +102,7 @@ function findDup(b, exceptId) {
 const lookCache = new Map();
 function cleanAuthor(a) {
   if (!a) return '';
+  a = nfkc(a);
   const ROLE = /^(原作|作画|著|作|文|絵|訳|編|編著|監修|イラスト|漫画|画|原案|著者|作者|翻訳)$/;
   return String(a).split(/[\/／;；]|\s{2,}/).map(p => p.trim()
       .replace(/^(原作|作画|著|作|文|絵|訳|編|編著|監修|イラスト|漫画|画|原案|翻訳)[\s　]+/, '')
@@ -111,7 +112,7 @@ function cleanAuthor(a) {
     .map(p => /[぀-ヿ一-鿿]/.test(p) ? p.replace(/[,，]\s*/g, '') : p.split(/,\s*/).reverse().join(' '))
     .filter((v, i, arr) => arr.indexOf(v) === i).join('・');
 }
-function cleanTitle(t, vol) { t = String(t || '').replace(/\s*:\s*\[[^\]]*\]/g, '').replace(/\[[^\]]*\]/g, '').replace(/\s+\./g, '.').trim(); if (vol && !t.includes(vol)) t += ' ' + vol; return t; }
+function cleanTitle(t, vol) { t = nfkc(t).replace(/\s+/g, ' ').replace(/\s*:\s*\[[^\]]*\]/g, '').replace(/\[[^\]]*\]/g, '').replace(/\s+\./g, '.').trim(); if (vol && !t.includes(vol)) t += ' ' + vol; return t; }
 function normPubdate(s) { const m = nfkc(s).match(/(\d{4})[-.\/年]?(\d{1,2})?[-.\/月]?(\d{1,2})?/); if (!m) return ''; return m[1] + (m[2] ? '-' + m[2].padStart(2, '0') : '') + (m[3] ? '-' + m[3].padStart(2, '0') : ''); }
 async function fetchJson(u, ms = 8000) { const c = new AbortController(), t = setTimeout(() => c.abort(), ms); try { const r = await fetch(u, { signal: c.signal }); if (!r.ok) throw 0; return await r.json(); } finally { clearTimeout(t); } }
 async function fetchText(u, ms = 8000) { const c = new AbortController(), t = setTimeout(() => c.abort(), ms); try { const r = await fetch(u, { signal: c.signal }); if (!r.ok) throw 0; return await r.text(); } finally { clearTimeout(t); } }
@@ -140,15 +141,22 @@ async function lookup(isbn) {
   const [a, n, g] = res.map(r => r.status === 'fulfilled' ? r.value : null);
   if (!a && !n && !g) return null;
   const pick = k => (a && a[k]) || (n && n[k]) || (g && g[k]) || '';
-  const r = { title: pick('title'), author: pick('author'), publisher: pick('publisher'), pubdate: pick('pubdate'), cover: (a && a.cover) || (g && g.cover) || ('https://ndlsearch.ndl.go.jp/thumbnail/' + isbn + '.jpg'), series: pick('series'), genre: pick('genre') };
+  const r = { title: pick('title'), author: pick('author'), publisher: pick('publisher'), pubdate: pick('pubdate'), cover: (a && a.cover) || (g && g.cover) || '', series: pick('series'), genre: pick('genre') };
   if (!r.genre) r.genre = genreFromText(r.title, r.publisher);
   lookCache.set(isbn, r); return r;
 }
+function seriesGenre(series) {
+  const k = norm(series); if (!k) return '';
+  for (const x of books.values()) if (seriesKey(x) === k && x.genre && x.genre !== 'その他') return x.genre;
+  return '';
+}
 function bookFromLookup(isbn, r, extra = {}) {
-  const ps = parseSeries(r?.title || '');
+  const ps = parseSeries(r?.title || ''), ser = ps.series || (r && r.series) || '';
+  const g = (r?.genre && r.genre !== 'その他') ? r.genre : (seriesGenre(ser) || r?.genre || 'その他');
+  if (!extra.genre) delete extra.genre;
   return { id: newId(), addedAt: Date.now(), status: 'own', read: '', readAt: '', boughtAt: today(), memo: '', soldAt: '', soldTo: '', soldPrice: null, asin: '',
-    isbn, title: r?.title || '', author: r?.author || '', publisher: r?.publisher || '', pubdate: r?.pubdate || '', cover: r?.cover || (isbn ? 'https://ndlsearch.ndl.go.jp/thumbnail/' + isbn + '.jpg' : ''),
-    series: ps.series || (r && r.series) || '', vol: ps.vol, genre: r?.genre || 'その他', format: '紙', place: '', ...extra };
+    isbn, title: r?.title || '', author: r?.author || '', publisher: r?.publisher || '', pubdate: r?.pubdate || '', cover: r?.cover || '',
+    series: ser, vol: ps.vol, genre: g, format: '紙', place: '', ...extra };
 }
 
 /* ---------- 表紙 ---------- */
@@ -164,16 +172,35 @@ const idb = (() => {
   };
 })();
 const photos = new Map(); // 本のid → 表示用URL
+if (lsGet('hondana.covVer', '') !== '3') { lsSet('hondana.nocover', '[]'); lsSet('hondana.covVer', '3'); }
 let noCov = new Set((() => { try { return JSON.parse(lsGet('hondana.nocover', '[]')); } catch (e) { return []; } })());
 let ncTimer; const saveNoCov = () => { clearTimeout(ncTimer); ncTimer = setTimeout(() => lsSet('hondana.nocover', JSON.stringify([...noCov])), 400); };
-window.__nc = (img, id) => { const box = img.parentNode; if (box) box.classList.add('nocv'); img.remove(); if (id && !noCov.has(id)) { noCov.add(id); saveNoCov(); } };
-window.__ok = (img, id) => { if (img.naturalWidth < 5) { window.__nc(img, id); return; } if (noCov.delete(id)) saveNoCov(); };
-const hasCover = b => photos.has(b.id) || (!!httpsUrl(b.cover) && !noCov.has(b.id));
+// 表紙の候補を順番に試す：撮った写真 → 調べたときの表紙 → Amazon（ISBN-10）→ 国立国会図書館
+function isbn10(i13) { if (!/^978\d{10}$/.test(i13 || '')) return ''; const c = i13.slice(3, 12); let t = 0; for (let i = 0; i < 9; i++) t += (+c[i]) * (10 - i); const d = (11 - t % 11) % 11; return c + (d === 10 ? 'X' : d); }
+const workUrl = new Map(); // 本のid → 実際に表示できた表紙のURL（この起動中だけ覚える）
+function coverCands(b) {
+  const out = [], add = u => { u = httpsUrl(u); if (u && !out.includes(u)) out.push(u); };
+  if (workUrl.has(b.id)) add(workUrl.get(b.id));
+  if (b.cover && !/ndlsearch/.test(b.cover)) add(b.cover);
+  const i10 = isbn10(b.isbn); if (i10) add(`https://images-na.ssl-images-amazon.com/images/P/${i10}.09.LZZZZZZZ.jpg`);
+  if (b.asin && /^B0/i.test(b.asin)) add(`https://images-na.ssl-images-amazon.com/images/P/${b.asin}.09.LZZZZZZZ.jpg`);
+  if (b.isbn) add('https://ndlsearch.ndl.go.jp/thumbnail/' + b.isbn + '.jpg');
+  return out;
+}
+window.__nc = (img, id) => {
+  const list = (img.dataset.next || '').split(' ').filter(Boolean);
+  if (list.length) { img.dataset.next = list.slice(1).join(' '); img.src = list[0]; return; }
+  const box = img.parentNode; if (box) box.classList.add('nocv'); img.remove(); if (id && !noCov.has(id)) { noCov.add(id); saveNoCov(); }
+};
+window.__ok = (img, id) => { if (img.naturalWidth < 5) { window.__nc(img, id); return; } if (!img.src.startsWith('blob:')) workUrl.set(id, img.src); if (noCov.delete(id)) saveNoCov(); };
+const hasCover = b => photos.has(b.id) || (coverCands(b).length > 0 && !noCov.has(b.id));
 function coverHtml(b, cls = 'cv') {
-  const bg = tint(b.series || b.title || b.isbn), label = b.title || ('ISBN ' + b.isbn), ph = photos.get(b.id), src = ph || httpsUrl(b.cover);
-  const img = src ? `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-id="${esc(b.id)}" onerror="__nc(this,this.dataset.id)" onload="__ok(this,this.dataset.id)">` : '';
+  const bg = tint(b.series || b.title || b.isbn), label = b.title || ('ISBN ' + b.isbn), ph = photos.get(b.id);
+  const cands = ph ? [ph] : coverCands(b), src = cands[0];
+  const img = src ? `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-id="${esc(b.id)}" data-next="${esc(cands.slice(1).join(' '))}" onerror="__nc(this,this.dataset.id)" onload="__ok(this,this.dataset.id)">` : '';
   return `<div class="${cls}${src ? '' : ' nocv'}" style="background:${bg};color:#eef1f6"><span>${esc(label)}</span>${img}</div>`;
 }
+function volImg(b) { const c = photos.has(b.id) ? [photos.get(b.id)] : coverCands(b); return c.length ? `<img src="${esc(c[0])}" alt="" loading="lazy" referrerpolicy="no-referrer" data-id="${esc(b.id)}" data-next="${esc(c.slice(1).join(' '))}" onerror="__nc(this,this.dataset.id)" onload="__ok(this,this.dataset.id)">` : ''; }
 async function photoBlob(file) {
   const url = URL.createObjectURL(file);
   try {
@@ -235,7 +262,7 @@ function resultsHtml() {
   }
   return `<div class="grid">${gs.map(g => {
     if (g.one) { const b = g.one; return `<button class="tile${b.status === 'sold' ? ' sold' : ''}" data-book="${esc(b.id)}"><div style="position:relative">${coverHtml(b)}${FMARK[b.format] ? `<span class="fmt">${FMARK[b.format]}</span>` : ''}</div><span class="tt">${esc(b.title || 'ISBN ' + b.isbn)}</span></button>`; }
-    const bs = g.books.slice().sort((a, b) => (a.vol || 0) - (b.vol || 0)), top = (bs.find(b => b.cover && !/ndlsearch/.test(b.cover)) || bs.find(b => b.cover) || bs[0]), m = missingVols(bs);
+    const bs = g.books.slice().sort((a, b) => (a.vol || 0) - (b.vol || 0)), top = (bs.find(b => photos.has(b.id)) || bs.find(b => b.cover && !/ndlsearch/.test(b.cover)) || bs.find(b => b.isbn || b.asin) || bs[0]), m = missingVols(bs);
     return `<button class="tile" data-series="${esc(g.key)}"><div class="stack">${coverHtml({ ...top, title: bs[0].series })}<span class="badge">${bs.length}冊</span>${m.miss.length ? '<span class="miss" title="抜けている巻があります"></span>' : ''}</div><span class="tt">${esc(bs[0].series)}</span></button>`;
   }).join('')}</div>`;
 }
@@ -285,11 +312,11 @@ function renderSeries(key) {
   const tiles = [];
   if (m.max) for (let i = 1; i <= m.max; i++) {
     const b = byVol.get(i);
-    tiles.push(b ? `<button class="vol" data-book="${esc(b.id)}" style="background:${tint(name)}${b.status === 'sold' ? ';opacity:.4' : ''}" aria-label="${i}巻">${httpsUrl(b.cover) ? `<img src="${esc(httpsUrl(b.cover))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()" onload="if(this.naturalWidth<5)this.remove()">` : ''}<span class="n">${i}${FMARK[b.format] ? ' ' + FMARK[b.format] : ''}</span></button>`
+    tiles.push(b ? `<button class="vol" data-book="${esc(b.id)}" style="background:${tint(name)}${b.status === 'sold' ? ';opacity:.4' : ''}" aria-label="${i}巻">${volImg(b)}<span class="n">${i}${FMARK[b.format] ? ' ' + FMARK[b.format] : ''}</span></button>`
       : `<button class="vol gap" data-addvol="${i}" aria-label="${i}巻を追加"><b>${i}</b>なし</button>`);
   }
-  bs.filter(b => !b.vol || ![...byVol.values()].includes(b)).forEach(b => tiles.push(`<button class="vol" data-book="${esc(b.id)}" style="background:${tint(name)}">${httpsUrl(b.cover) ? `<img src="${esc(httpsUrl(b.cover))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="n">${esc((b.title || '').slice(0, 4))}</span></button>`));
-  const top = (bs.find(b => b.cover && !/ndlsearch/.test(b.cover)) || bs.find(b => b.cover) || bs[0]);
+  bs.filter(b => !b.vol || ![...byVol.values()].includes(b)).forEach(b => tiles.push(`<button class="vol" data-book="${esc(b.id)}" style="background:${tint(name)}">${volImg(b)}<span class="n">${esc((b.title || '').slice(0, 4))}</span></button>`));
+  const top = (bs.find(b => photos.has(b.id)) || bs.find(b => b.cover && !/ndlsearch/.test(b.cover)) || bs.find(b => b.isbn || b.asin) || bs[0]);
   app.innerHTML = `<div class="page">
     <button class="back" data-home>${svgBack}本棚</button>
     <div class="hero"><div class="cvbox"><div class="stack">${coverHtml({ ...top, title: name })}</div></div>
@@ -299,11 +326,13 @@ function renderSeries(key) {
         ${m.miss.length ? `<p style="margin:2px 0 0;font-size:13px;color:var(--blue);font-weight:700">${m.miss.length > 4 ? m.miss.slice(0, 4).join('・') + '巻ほか' : m.miss.join('・') + '巻'}がありません</p>` : ''}
       </div></div>
     <h3>巻</h3><div class="vols">${tiles.join('')}</div>
-    ${infoRows([['形態', esc(fm)], ['置き場所', esc(places)], ['出版社', esc(pubs)], ['ジャンル', esc(bs[0].genre)]])}
+    ${infoRows([['形態', esc(fm)], ['置き場所', esc(places)], ['出版社', esc(pubs)]])}
+    <label class="ir" style="align-items:center"><span>ジャンル（全巻）</span><select id="serGenre" class="sel" style="height:40px">${GENRES.map(g => `<option ${g === (bs.find(b => b.genre !== 'その他') || bs[0]).genre ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
     <div class="row" style="margin-top:20px"><button class="btn gold" id="addNext">${m.miss.length ? m.miss[0] : (m.max || own.length) + 1}巻をバーコードで追加</button></div>
     <p class="note" style="margin-top:12px">巻の表紙を押すと、その1冊の詳しい情報が開きます。シリーズ名や巻数は1冊ごとの「編集」で直せます。</p>
   </div>`;
-  $('addNext').onclick = () => openScan({ format: own[0]?.format, place: own[0]?.place });
+  $('addNext').onclick = () => openScan({ format: own[0]?.format, place: own[0]?.place, genre: (bs.find(b => b.genre !== 'その他') || {}).genre });
+  $('serGenre').onchange = e => { putMany(bs.map(b => ({ ...b, genre: e.target.value }))); toast(`このシリーズを全部「${e.target.value}」にしました`); };
 }
 function renderBook(id) {
   const b = books.get(id); if (!b) { location.hash = ''; return; }
@@ -351,7 +380,7 @@ window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); }
 app.addEventListener('click', e => {
   const t = e.target.closest('[data-book],[data-series],[data-home],[data-genre],[data-addvol]'); if (!t) return;
   if (t.dataset.genre) { ui.genre = t.dataset.genre; saveUi(); render(); return; }
-  if (t.dataset.addvol) { const key = decodeURIComponent(location.hash.slice(3)); const ex = [...books.values()].find(b => seriesKey(b) === key); openScan({ format: ex?.format, place: ex?.place }); return; }
+  if (t.dataset.addvol) { const key = decodeURIComponent(location.hash.slice(3)); const ex = [...books.values()].find(b => seriesKey(b) === key); openScan({ format: ex?.format, place: ex?.place, genre: ex && ex.genre !== 'その他' ? ex.genre : '' }); return; }
   if ('home' in t.dataset) { go(''); return; }
   if (t.dataset.series) { go('#s-' + encodeURIComponent(t.dataset.series)); return; }
   if (t.dataset.book) go('#b-' + encodeURIComponent(t.dataset.book));
@@ -394,7 +423,7 @@ $('fIsbn').addEventListener('change', async () => {
   if (!r) { editMsg(navigator.onLine === false ? 'オフラインのため調べられませんでした。手で入れてください。' : 'このISBNの本は見つかりませんでした。手で入れてください。', true); return; }
   const nb = bookFromLookup(i, r);
   [['fTitle', 'title'], ['fAuthor', 'author'], ['fPub', 'publisher'], ['fSeries', 'series'], ['fVol', 'vol'], ['fPubdate', 'pubdate']].forEach(([f, k]) => { if (!$(f).value && nb[k]) $(f).value = nb[k]; });
-  $('fGenre').value = nb.genre; const base = JSON.parse($('editForm').dataset.base || '{}'); base.cover = nb.cover; $('editForm').dataset.base = JSON.stringify(base);
+  if (!JSON.parse($('editForm').dataset.base || '{}').genreFixed) $('fGenre').value = nb.genre; const base = JSON.parse($('editForm').dataset.base || '{}'); base.cover = nb.cover; $('editForm').dataset.base = JSON.stringify(base);
   editMsg('書名を調べて入れました。合っていれば「保存」を押してください。');
 });
 $('editForm').addEventListener('submit', e => {
@@ -408,8 +437,8 @@ $('editForm').addEventListener('submit', e => {
   Object.assign(base, { isbn, title, author: $('fAuthor').value.trim(), publisher: $('fPub').value.trim(), series: $('fSeries').value.trim(), vol: vol > 0 ? vol : null,
     genre: $('fGenre').value, format: $('fFmt').value, pubdate: $('fPubdate').value.trim(), boughtAt: $('fBought').value, place: $('fPlace').value.trim(), read: $('fRead').value,
     readAt: $('fRead').value === '読んだ' ? $('fReadAt').value : '', memo: $('fMemo').value.trim() });
-  if (!base.cover && isbn) base.cover = 'https://ndlsearch.ndl.go.jp/thumbnail/' + isbn + '.jpg';
   if (base.status === 'sold') { base.soldAt = $('fSoldAt').value; base.soldTo = $('fSoldTo').value.trim(); base.soldPrice = price ? +price : null; }
+  delete base.genreFixed;
   const isNew = !editing; put(base); if (base.place) lsSet('hondana.lastPlace', base.place); closeV('vEdit');
   toast(isNew ? `「${base.title || 'ISBN ' + base.isbn}」を追加しました` : '保存しました');
   if (isNew) go('#b-' + encodeURIComponent(base.id));
@@ -421,8 +450,8 @@ const scanCv = document.createElement('canvas');
 function scanSay(t, warn) { $('scanMsg').textContent = t; $('scanMsg').className = 'msg' + (warn ? ' warn' : ''); }
 async function openScan(pre = {}) {
   $('scanList').innerHTML = ''; scanCount = 0; lastAdded = null;
-  $('scanFmt').value = pre.format || lsGet('hondana.lastFmt', '紙'); $('scanRead').value = ''; $('scanPlace').value = pre.place ?? lsGet('hondana.lastPlace', '');
-  scanSay('本の裏のバーコード（978で始まる上の段）を、枠の中に横向きに映してください。'); openV('vScan');
+  $('scanFmt').value = pre.format || lsGet('hondana.lastFmt', '紙'); $('scanRead').value = ''; $('scanGenre').value = pre.genre || ''; $('scanPlace').value = pre.place ?? lsGet('hondana.lastPlace', '');
+  scanSay('本の裏のバーコード（978で始まる上の段）を、枠の中に横向きに映してください。続けて下の段も読むと、ジャンルが自動で付きます。'); openV('vScan');
   if (!navigator.mediaDevices?.getUserMedia) { scanSay('ここではカメラを使えません。「写真から読む」か「手で入力する」をお使いください。', true); return; }
   try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); }
   catch (e) { scanSay('カメラを使えませんでした。iPhoneの「設定」→「Safari」→「カメラ」を「許可」にしてください。', true); return; }
@@ -453,14 +482,14 @@ async function tick() {
 }
 async function onIsbn(isbn) {
   try { navigator.vibrate?.(60); } catch (e) {}
-  const fmt = $('scanFmt').value, place = $('scanPlace').value.trim(), rd = $('scanRead').value; lsSet('hondana.lastFmt', fmt); if (place) lsSet('hondana.lastPlace', place);
+  const fmt = $('scanFmt').value, place = $('scanPlace').value.trim(), rd = $('scanRead').value, gn = $('scanGenre').value; lsSet('hondana.lastFmt', fmt); if (place) lsSet('hondana.lastPlace', place);
   const d = findDup({ isbn });
   if (!$('scanCont').checked) {
-    closeV('vScan'); openEdit(bookFromLookup(isbn, null, { format: fmt, place, read: rd })); $('fIsbn').dispatchEvent(new Event('change')); return;
+    closeV('vScan'); openEdit(bookFromLookup(isbn, null, { format: fmt, place, read: rd, genre: gn, genreFixed: !!gn })); $('fIsbn').dispatchEvent(new Event('change')); return;
   }
   if (d) { scanSay(`もう持っています：${d.title || 'ISBN ' + isbn}（${d.format}${d.status === 'sold' ? '・売った' : ''}${d.place ? '・' + d.place : ''}）`, true); return; }
   scanSay(`ISBN ${isbn} を調べています…`);
-  const r = await lookup(isbn), b = bookFromLookup(isbn, r, { format: fmt, place, read: rd });
+  const r = await lookup(isbn), b = bookFromLookup(isbn, r, { format: fmt, place, read: rd, genre: gn });
   put(b); scanCount++; lastAdded = { id: b.id, at: Date.now() };
   const li = document.createElement('li'); li.innerHTML = `<div class="mini">${coverHtml(b)}</div><span></span>`; li.querySelector('span').textContent = (b.title || `ISBN ${isbn}（書名はあとで）`) + (b.author ? ' — ' + b.author : '');
   $('scanList').prepend(li);
@@ -522,7 +551,7 @@ function recordToBook(o, fmtDefault) {
   const ps = parseSeries(title);
   let fmt = g('format'); fmt = FORMATS.includes(fmt) ? fmt : /kindle/i.test(fmt) ? 'Kindle' : /walker/i.test(fmt) ? 'BookWalker' : fmt ? 'その他電子' : fmtDefault;
   const read = normRead(g('read')), vol = parseInt(g('vol'), 10), price = g('soldPrice').replace(/\D/g, '');
-  const cover = httpsUrl(g('cover')) || (asin && /^B0/.test(asin) ? `https://images-na.ssl-images-amazon.com/images/P/${asin}.09.LZZZZZZZ.jpg` : '') || (isbn ? 'https://ndlsearch.ndl.go.jp/thumbnail/' + isbn + '.jpg' : '');
+  const cover = /ndlsearch|images-amazon/.test(g('cover')) ? '' : httpsUrl(g('cover'));
   const added = Date.parse(g('addedAt'));
   return { id: newId(), title, author: cleanAuthor(g('author')) || g('author'), publisher: g('publisher'), isbn, asin, series: g('series') || ps.series, vol: vol > 0 ? vol : ps.vol,
     genre: GENRES.includes(g('genre')) ? g('genre') : (genreFromText(title, g('publisher')) || (fmt !== '紙' && ps.vol ? '漫画' : 'その他')), format: fmt, place: g('place'),

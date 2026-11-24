@@ -144,7 +144,10 @@ textarea{resize:vertical}
     <div class="fgrid" style="margin-top:4px">
       <label class="f">形態<select id="scanFmt"></select></label>
       <label class="f">置き場所<input id="scanPlace" list="places" autocomplete="off" placeholder="寝室の本棚 上段"></label>
-      <label class="f full">読んだ？（この棚の本にまとめて付けます）<select id="scanRead"><option value="">未設定のまま</option><option>読んだ</option><option>まだ</option></select></label>
+      <label class="f">ジャンル<select id="scanGenre"><option value="">自動で判定</option><option>漫画</option><option>小説</option><option>技法書</option><option>その他</option></select></label>
+      <label class="f">読んだ？<select id="scanRead"><option value="">未設定のまま</option><option>読んだ</option><option>まだ</option></select></label>
+      <p class="note full" style="margin:0">ここで選んだジャンル・読んだ？は、この画面で続けて読む本にまとめて付きます。</p>
+      
     </div>
     <ul class="added" id="scanList"></ul>
     <div class="row" style="margin-top:14px">
