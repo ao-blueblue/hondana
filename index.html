@@ -121,6 +121,25 @@ label.f input[type=date]{-webkit-appearance:none;appearance:none}
 .imp-list label{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-bottom:1px solid var(--line2);font-size:14px}
 .imp-list input{width:20px;height:20px;margin-top:2px;flex:none;accent-color:var(--blue)}
 .tag{font-size:11px;color:var(--blue);font-weight:700;white-space:nowrap}
+body:has(.selbar:not([hidden])) .toast{bottom:calc(150px + var(--sb))}
+.cv>span{overflow:hidden;display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;max-height:100%}
+.tile,.sp{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.tile.picked .cv,.tile.picked .stack{outline:3px solid var(--blue);outline-offset:2px;border-radius:4px}
+.tile.picked::after{content:"✓";position:absolute;top:6px;left:6px;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#081020;font:700 14px/24px var(--sans);text-align:center;z-index:3}
+.sp.picked{outline:3px solid var(--blue)}
+.tile{position:relative}
+.cv.folder{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:4px;padding:6px;background:#1a2440;border:1px solid var(--line)}
+.cv.folder .fm{min-width:0;min-height:0}
+.cv.mini4{aspect-ratio:auto;height:100%;padding:3px;font-size:8px;line-height:1.2;overflow:hidden}
+.cv.mini4.nocv::after{display:none}
+.tile.dragging{opacity:.35}
+.tile.dropto .cv,.tile.dropto .stack{outline:3px dashed var(--gold);outline-offset:3px}
+.ghost{position:fixed;left:0;top:0;z-index:40;pointer-events:none;filter:drop-shadow(0 10px 20px rgba(0,0,0,.5))}
+.selbar{position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--p2);border-top:1px solid var(--line);padding:10px 14px calc(10px + var(--sb))}
+.selhead{display:flex;gap:8px;align-items:center;margin-bottom:8px}.selhead span{flex:1;font-size:14px;color:var(--gold)}
+.selacts{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none}.selacts::-webkit-scrollbar{display:none}
+.selacts .btn{flex:none;min-height:44px;padding:0 14px;font-size:14px}
+.btn:disabled{opacity:.4}
 .toast{position:fixed;left:50%;bottom:calc(90px + var(--sb));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;display:none;gap:14px;align-items:center;z-index:30;max-width:92vw;font-size:14px}
 .toast.on{display:flex}.toast button{background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;min-height:34px;padding:0 10px}
 textarea{resize:vertical}
@@ -174,6 +193,8 @@ textarea{resize:vertical}
       <label class="f">形態<select id="fFmt"></select></label>
       <label class="f">出版日<input id="fPubdate" autocomplete="off" placeholder="2019-07"></label>
       <label class="f">購入日<input id="fBought" type="date"></label>
+      <label class="f">定価（税抜・円）<input id="fList" inputmode="numeric" autocomplete="off" placeholder="バーコードから自動"></label>
+      <label class="f">買った値段（円）<input id="fPaid" inputmode="numeric" autocomplete="off" placeholder="空なら定価の税込"></label>
       <label class="f">置き場所<input id="fPlace" list="places" autocomplete="off"></label>
       <label class="f">読んだ？<select id="fRead"><option value="">未設定</option><option>読んだ</option><option>まだ</option></select></label>
       <label class="f" id="fReadAtBox">読み終えた日（空でもOK）<input id="fReadAt" type="date"></label>
@@ -200,6 +221,10 @@ textarea{resize:vertical}
     <button class="opt" id="mManual"><span><b>手で1冊追加する</b><span>バーコードのない本や、調べても出てこない本に</span></span></button>
     <button class="opt" id="mTrial"><span><b>お試しの本を選ぶ</b><span>無料版や1巻だけの本をまとめて「お試し」にして、普段の本棚から外します</span></span></button>
     <button class="opt" id="mTrialDel"><span><b>お試しの本をまとめて削除</b><span>お試しにした本を見直して、いらないものを一気に消します</span></span></button>
+    <button class="opt" id="mFolders"><span><b>まとまりの候補を探す</b><span>「ラヴクラフト傑作集」「類語辞典シリーズ」のように、書名の後ろに同じ名前が付いた本をまとめます</span></span></button>
+    <button class="opt" id="mEnrich"><span><b>電子書籍の情報を紙の版から補う</b><span>書名と著者で紙の版を探して、ジャンル・出版社・出版日・表紙を入れます</span></span></button>
+    <button class="opt" id="mMoney"><span><b>お金のまとめ</b><span>本に使ったお金、売って戻ってきたお金、ストア別・ジャンル別の合計</span></span></button>
+    <button class="opt" id="mLists"><span><b>ジャンル・ストアを編集</b><span>「料理」「DMM」のように、自分でジャンルやストアを足せます</span></span></button>
     <button class="opt" id="mRegroup"><span><b>シリーズをまとめ直す</b><span>書名からシリーズと巻数を読み取り直します。バラバラになった巻がまとまります</span></span></button>
     <h3>バックアップ</h3>
     <p class="note" id="lastBk" style="margin:0 0 10px"></p>
@@ -207,7 +232,7 @@ textarea{resize:vertical}
     <button class="opt" id="mExport"><span><b>CSVで書き出す</b><span>表計算ソフトでも開ける形。写真の表紙は入りません</span></span></button>
     <button class="opt" id="mRestore"><span><b>バックアップから戻す</b><span>まるごとバックアップやCSVを読み込みます（登録済みの本は飛ばします）</span></span></button>
     <input type="file" id="fileIn" accept=".csv,.json,.txt,text/csv,application/json" hidden>
-    <p class="note" style="margin-bottom:4px">バージョン 2.9.0</p>
+    <p class="note" style="margin-bottom:4px">バージョン 3.0.0</p>
     <p class="note">本のデータはこのiPhoneの中だけに保存されます。書名を調べるときだけ、ISBNを openBD・Google Books・国立国会図書館に問い合わせます。</p>
   </div>
 </div>
@@ -242,9 +267,62 @@ textarea{resize:vertical}
   </div>
 </div>
 
+<!-- 選ぶだけの小さなシート -->
+<div class="veil" id="vPick" role="dialog" aria-modal="true" aria-labelledby="pickT">
+  <div class="sheet">
+    <h2><span id="pickT">選ぶ</span><button class="x" data-close aria-label="閉じる">×</button></h2>
+    <div id="pickOpts"></div>
+    <div id="pickInBox" class="row" style="margin-top:6px;align-items:stretch"><input id="pickIn" style="flex:1;min-height:48px;padding:8px 12px;border:1px solid var(--ctl);border-radius:12px;background:var(--p1);font-size:16px;color:var(--ink)"><button class="btn gold" id="pickOk" style="flex:none">決定</button></div>
+  </div>
+</div>
+
+<!-- ジャンル・ストアを編集 -->
+<div class="veil" id="vLists" role="dialog" aria-modal="true" aria-labelledby="listsT">
+  <div class="sheet">
+    <h2><span id="listsT">ジャンル・ストアを編集</span><button class="x" data-close aria-label="閉じる">×</button></h2>
+    <p class="note">本が1冊でも入っているものは消せません。選択モードで別のジャンルやストアに移してから消してください。</p>
+    <h3>ジャンル</h3><div class="info" id="listGenres"></div>
+    <div class="row" style="margin-top:8px;align-items:stretch"><input id="newGenre" placeholder="例：料理" style="flex:1;min-height:44px;padding:8px 12px;border:1px solid var(--ctl);border-radius:10px;background:var(--p1);font-size:16px;color:var(--ink)"><button class="btn" id="addGenre" style="flex:none">足す</button></div>
+    <h3>ストア</h3><div class="info" id="listFormats"></div>
+    <div class="row" style="margin-top:8px;align-items:stretch"><input id="newFormat" placeholder="例：楽天Kobo" style="flex:1;min-height:44px;padding:8px 12px;border:1px solid var(--ctl);border-radius:10px;background:var(--p1);font-size:16px;color:var(--ink)"><button class="btn" id="addFormat" style="flex:none">足す</button></div>
+  </div>
+</div>
+
+<!-- お金のまとめ -->
+<div class="veil" id="vMoney" role="dialog" aria-modal="true" aria-labelledby="moneyT">
+  <div class="sheet">
+    <h2><span id="moneyT">お金のまとめ</span><button class="x" data-close aria-label="閉じる">×</button></h2>
+    <div id="moneyBody"></div>
+  </div>
+</div>
+
+<!-- 紙の版から補う -->
+<div class="veil" id="vEnrich" role="dialog" aria-modal="true" aria-labelledby="enT">
+  <div class="sheet">
+    <h2><span id="enT">電子書籍の情報を補う</span><button class="x" data-close aria-label="閉じる">×</button></h2>
+    <p class="note">書名と著者名で、国立国会図書館（見つからなければGoogle Books）から紙の版を探します。書名と巻数がぴったり合ったものだけ自動で入れて、似ているだけのものは最後に確かめてもらいます。手で決めたジャンルは変えません。1冊ずつ調べるので、冊数が多いと数分かかります。途中で止めても、続きからまた調べられます。</p>
+    <p class="note" id="enInfo" style="margin-top:8px"></p>
+    <div class="row" style="margin-top:10px"><button class="btn gold" id="enGo">調べ始める</button><button class="btn" id="enStop" hidden>止める</button></div>
+    <div class="row" style="margin-top:8px"><button class="btn" id="enAgain" style="min-height:40px">見つからなかった本も、もう一度調べる</button></div>
+    <p class="msg" id="enMsg" aria-live="polite"></p>
+    <div id="enPrev" hidden>
+      <div class="imp-list" id="enList"></div>
+      <div class="row" style="margin-top:12px"><button class="btn gold" id="enApply">チェックした本に入れる</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 選択モードの操作 -->
+<div class="selbar" id="selBar" hidden>
+  <div class="selhead"><span id="selCount"></span><button class="btn" data-act="all" style="min-height:36px;flex:none">全部</button><button class="btn" data-act="cancel" style="min-height:36px;flex:none">やめる</button></div>
+  <div class="selacts">
+    <button class="btn" data-act="trial">お試し</button><button class="btn" data-act="read">読んだ？</button><button class="btn" data-act="genre">ジャンル</button><button class="btn" data-act="format">ストア</button><button class="btn" data-act="paid">値段</button><button class="btn" data-act="fold">まとめる</button><button class="btn" data-act="unfold">まとまりから外す</button><button class="btn danger" data-act="delete">削除</button>
+  </div>
+</div>
+
 <datalist id="places"></datalist>
 <div class="toast" id="toast" role="status"><span id="tMsg"></span><button id="tUndo" hidden>元に戻す</button></div>
 
-<script src="app.js?v=2.9.0"></script>
+<script src="app.js?v=3.0.0"></script>
 </body>
 </html>

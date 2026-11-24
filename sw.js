@@ -1,6 +1,6 @@
 // アプリ本体を端末に保存して、電波がなくても開けるようにする
-const CACHE = 'hondana-2.9.0';
-const FILES = ['./', 'index.html', 'app.js?v=2.9.0', 'zxing.min.js?v=0.21.3', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
+const CACHE = 'hondana-3.0.0';
+const FILES = ['./', 'index.html', 'app.js?v=3.0.0', 'zxing.min.js?v=0.21.3', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))));
