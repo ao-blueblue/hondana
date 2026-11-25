@@ -124,6 +124,7 @@ label.f input[type=date]{-webkit-appearance:none;appearance:none}
 body:has(.selbar:not([hidden])) .toast{bottom:calc(150px + var(--sb))}
 .cv>span{overflow:hidden;display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;max-height:100%}
 .tile,.sp{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.vol.picked{outline:3px solid var(--blue);outline-offset:2px;opacity:1!important;position:relative}.vol.picked::after{content:"✓";position:absolute;top:4px;left:4px;width:20px;height:20px;border-radius:50%;background:var(--blue);color:#081020;font:700 12px/20px var(--sans);text-align:center}
 .tile.picked .cv,.tile.picked .stack{outline:3px solid var(--blue);outline-offset:2px;border-radius:4px}
 .tile.picked::after{content:"✓";position:absolute;top:6px;left:6px;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#081020;font:700 14px/24px var(--sans);text-align:center;z-index:3}
 .sp.picked{outline:3px solid var(--blue)}
@@ -132,15 +133,12 @@ body:has(.selbar:not([hidden])) .toast{bottom:calc(150px + var(--sb))}
 .cv.folder .fm{min-width:0;min-height:0}
 .cv.mini4{aspect-ratio:auto;height:100%;padding:3px;font-size:8px;line-height:1.2;overflow:hidden}
 .cv.mini4.nocv::after{display:none}
-.tile.dragging{opacity:.35}
-.tile.dropto .cv,.tile.dropto .stack{outline:3px dashed var(--gold);outline-offset:3px}
-.ghost{position:fixed;left:0;top:0;z-index:40;pointer-events:none;filter:drop-shadow(0 10px 20px rgba(0,0,0,.5))}
 .selbar{position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--p2);border-top:1px solid var(--line);padding:10px 14px calc(10px + var(--sb))}
 .selhead{display:flex;gap:8px;align-items:center;margin-bottom:8px}.selhead span{flex:1;font-size:14px;color:var(--gold)}
 .selacts{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none}.selacts::-webkit-scrollbar{display:none}
 .selacts .btn{flex:none;min-height:44px;padding:0 14px;font-size:14px}
 .btn:disabled{opacity:.4}
-.toast{position:fixed;left:50%;bottom:calc(90px + var(--sb));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;display:none;gap:14px;align-items:center;z-index:30;max-width:92vw;font-size:14px}
+.toast{position:fixed;left:50%;bottom:calc(90px + var(--sb));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;display:none;gap:14px;align-items:center;z-index:30;max-width:min(92vw,420px);width:max-content;font-size:14px}
 .fsel{position:fixed;left:max(18px,calc(50% - 362px));bottom:calc(20px + var(--sb));height:56px;min-width:56px;padding:0 18px;border-radius:999px;border:1px solid var(--line2);background:var(--p2);color:#c9cfdc;font:700 15px var(--sans);box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:5}
 .tile.flash .cv,.tile.flash .stack{animation:flash 1.6s ease 2}@keyframes flash{0%,100%{box-shadow:0 0 0 0 rgba(210,176,106,0)}50%{box-shadow:0 0 0 4px var(--gold)}}
 #vScan .sheet{border-top:3px solid var(--gold)}#vScan[data-mode=check] .sheet{border-top-color:var(--blue)}#vScan[data-mode=sell] .sheet{border-top-color:#d46a6a}
@@ -151,6 +149,8 @@ body:has(.selbar:not([hidden])) .toast{bottom:calc(150px + var(--sb))}
 body.hasbg{background:transparent}body.hasbg .top{background:rgba(14,21,38,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}body.hasbg #bgImg{display:block}
 .bgprev{height:180px;border-radius:12px;border:1px solid var(--line);background:var(--p1) center/cover no-repeat;position:relative;overflow:hidden;display:flex;align-items:flex-end;padding:12px}
 .bgprev::after{content:'';position:absolute;inset:0;background:var(--bg);opacity:var(--dim,.75)}.bgprev span{position:relative;z-index:1;color:var(--gold);font:700 18px var(--serif)}
+.scanhead{position:sticky;top:-18px;margin:-18px -20px 10px;padding:18px 20px 10px;background:var(--bg);z-index:3;border-bottom:1px solid var(--line)}.scanhead h2{margin-top:0}
+#scanMore{margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px}#scanMore summary{cursor:pointer;color:#c9cfdc;font-weight:700;font-size:14px}#scanMoreSum{color:var(--mut2);font-weight:400;margin-left:8px;font-size:13px}
 .toast.on{display:flex}#tMsg{flex:1;min-width:0}.toast:has(#tGo:not([hidden])){width:min(92vw,400px)}.toast button{white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;min-height:34px;padding:0 10px}
 textarea{resize:vertical}
 @media(prefers-reduced-motion:no-preference){.tile .cv{transition:transform .15s}.tile:active .cv{transform:scale(.97)}}
@@ -168,8 +168,8 @@ textarea{resize:vertical}
 <!-- スキャン -->
 <div class="veil" id="vScan" role="dialog" aria-modal="true" aria-labelledby="scanT">
   <div class="sheet">
-    <h2><span id="scanT">バーコードを読む</span><button class="x" data-close aria-label="閉じる">×</button></h2>
-    <div class="seg" id="scanMode" role="group" aria-label="読む目的" style="margin:0 0 10px"><button type="button" data-m="check" aria-pressed="false">確かめる</button><button type="button" data-m="add" aria-pressed="true">登録する</button><button type="button" data-m="sell" aria-pressed="false">売る</button></div>
+    <div class="scanhead"><h2><span id="scanT">バーコードを読む</span><button class="x" data-close aria-label="閉じる">×</button></h2>
+    <div class="seg" id="scanMode" role="group" aria-label="読む目的" style="margin:0"><button type="button" data-m="check" aria-pressed="false">確かめる</button><button type="button" data-m="add" aria-pressed="true">登録する</button><button type="button" data-m="sell" aria-pressed="false">売る</button></div></div>
     <div class="cam"><video id="video" playsinline muted autoplay></video><div class="frame"></div></div>
     <p class="msg" id="scanMsg" aria-live="polite"></p>
     <label class="chk" id="scanContBox"><input type="checkbox" id="scanCont" checked> 続けて登録する（読むたびに本棚へ追加）</label>
@@ -179,15 +179,15 @@ textarea{resize:vertical}
       <p class="note full" style="margin:0">持っている本は「売った」に変わります。まだ登録していない本は、売った本として登録します。売れた金額は「終わる」を押したあとに、まとめて入れられます。</p>
       <p class="full" id="sellSum" style="margin:0;color:var(--gold);font-weight:700"></p>
     </div>
-    <div class="fgrid" id="scanFields" style="margin-top:4px">
+    <ul class="added" id="scanList"></ul>
+    <details id="scanMore"><summary>詳しく設定する<span id="scanMoreSum"></span></summary>
+    <div class="fgrid" id="scanFields" style="margin-top:8px">
       <label class="f">形態<select id="scanFmt"></select></label>
       <label class="f" id="scanPlaceBox">置き場所<input id="scanPlace" list="places" autocomplete="off" placeholder="寝室の本棚 上段"></label>
       <label class="f">ジャンル<select id="scanGenre"><option value="">自動で判定</option><option>漫画</option><option>小説</option><option>技法書</option><option>その他</option></select></label>
       <label class="f">読んだ？<select id="scanRead"><option value="">未設定のまま</option><option>読んだ</option><option>まだ</option></select></label>
       <p class="note full" style="margin:0">ここで選んだジャンル・読んだ？は、この画面で続けて読む本にまとめて付きます。</p>
-      
-    </div>
-    <ul class="added" id="scanList"></ul>
+    </div></details>
     <div class="row" style="margin-top:14px">
       <label class="btn" for="photoIn" style="display:flex;align-items:center;justify-content:center">写真から読む</label>
       <button class="btn" id="toManual">手で入力する</button>
@@ -253,7 +253,7 @@ textarea{resize:vertical}
     <button class="opt" id="mExport"><span><b>CSVで書き出す</b><span>表計算ソフトでも開ける形。写真の表紙は入りません</span></span></button>
     <button class="opt" id="mRestore"><span><b>バックアップから戻す</b><span>まるごとバックアップやCSVを読み込みます（登録済みの本は飛ばします）</span></span></button>
     <input type="file" id="fileIn" accept=".csv,.json,.txt,text/csv,application/json" hidden>
-    <p class="note" style="margin-bottom:4px">バージョン 3.3.0</p>
+    <p class="note" style="margin-bottom:4px">バージョン 3.5.0</p>
     <p class="note">本のデータはこのiPhoneの中だけに保存されます。書名を調べるときだけ、ISBNを openBD・Google Books・国立国会図書館に問い合わせます。</p>
   </div>
 </div>
@@ -284,6 +284,7 @@ textarea{resize:vertical}
     <p class="note" id="bulkNote"></p>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px"><span class="note" id="bulkSum"></span><button class="btn" id="bulkAll" style="min-height:36px;flex:none">全部選ぶ／外す</button></div>
     <div class="imp-list" id="bulkList"></div>
+    <button class="btn" id="bulkMore" hidden style="min-height:34px;margin-top:8px;font-size:13px;width:100%">前に外した候補も出す</button>
     <div class="row" style="margin-top:14px"><button class="btn gold" id="bulkGo">実行</button></div>
   </div>
 </div>
@@ -382,6 +383,6 @@ textarea{resize:vertical}
 <datalist id="places"></datalist><datalist id="soldTos"></datalist>
 <div class="toast" id="toast" role="status"><span id="tMsg"></span><button id="tGo" hidden>見る</button><button id="tUndo" hidden>元に戻す</button></div>
 
-<script src="app.js?v=3.3.0"></script>
+<script src="app.js?v=3.5.0"></script>
 </body>
 </html>

@@ -56,10 +56,18 @@ function genreFromText(...xs) {
 }
 const NOT_MANGA = /辞典|事典|入門|教科書|講座|図鑑|ガイド|レッスン|ハンドブック|English Edition/i;
 const KANJI_VOL = { '上': 1, '中': 2, '下': 3, '前編': 1, '後編': 2, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 };
+// 【推しの子】のように、かっこの中が書名そのものの本もある。かっこを外したら書名が残らないとき（や「新装版」だけになるとき）は、かっこの中身を書名として読み直す
+const EDITION_ONLY = /^(新装版|完全版|愛蔵版|文庫版|新版|改訂版|復刻版|特装版|限定版)$/;
 function parseSeries(title) {
+  const r = parseSeries1(title, false);
+  if ((!r.series || EDITION_ONLY.test(r.series)) && /[【［\[〔]/.test(title)) { const r2 = parseSeries1(title, true); if (r2.series && !EDITION_ONLY.test(r2.series)) return r2; }
+  return r;
+}
+function parseSeries1(title, keepBr) {
   let t = nfkc(title).trim();
   // 飾り・おまけ表記・レーベル名を外す（巻数だけのかっこは残す）
-  t = t.replace(/【[^】]*】|［[^］]*］|\[[^\]]*\]|〔[^〕]*〕/g, ' ');
+  // かっこの中の数字（［R-16］の16など）は巻数とまちがえないよう、全角にしておく
+  t = keepBr ? t.replace(/[【［\[〔]([^】］\]〕]*)[】］\]〕]/g, (_, x) => ' ' + x.replace(/\d/g, d => String.fromCharCode(d.charCodeAt(0) + 0xFEE0)) + ' ').replace(/期間限定|無料お試し版|試し読み増量版?|無料/g, ' ') : t.replace(/【[^】]*】|［[^］]*］|\[[^\]]*\]|〔[^〕]*〕/g, ' ');
   t = t.replace(/[(（][^()（）]*(?:特典|限定|描き下ろし|おまけ|特装|カラー版|分冊版|単話|English Edition)[^()（）]*[)）]/gi, ' ');
   for (let i = 0; i < 4; i++) { const m = t.match(/\s*[(（]([^()（）]*)[)）]\s*$/); if (!m || /^\s*(\d{1,4}|上|中|下|前編|後編)\s*$/.test(m[1])) break; t = t.slice(0, m.index); }
   t = t.replace(/(\d+)\s*[〜~～]\s*\d+/g, '$1');
@@ -67,7 +75,7 @@ function parseSeries(title) {
   t = t.replace(/\s+/g, ' ').trim();
   const clean = x => x.replace(/[\s　:：\-－,、.・]+$/, '').replace(/^[\s　:：]+/, '').trim();
   const vnum = x => KANJI_VOL[x] ?? parseInt(x, 10);
-  const ok = (ser, v) => { ser = clean(ser); v = vnum(v); return ser && v > 0 && v < 2000 ? { series: ser, vol: v } : null; };
+  const ok = (ser, v) => { ser = clean(ser); v = vnum(v); return ser && !/^\d{1,2}$/.test(ser) && v > 0 && v < 2000 ? { series: ser, vol: v } : null; }; // 数字だけのシリーズ名（「【推しの子】 13」→「1」）は作らない
   let m, r;
   // 第一話 ○○
   if ((m = t.match(/^第\s*([0-9一二三四五六七八九十]+)\s*話\s+(.+)$/)) && (r = ok(m[2], m[1]))) return r;
@@ -81,6 +89,8 @@ function parseSeries(title) {
   if ((m = t.match(/^(.+?)[\s　]*第?(\d{1,4})巻.*$/)) && (r = ok(m[1], m[2]))) return r;
   // ○○ 3 シリーズ名 / ○○(上) 副題（巻数のあとにシリーズ名や副題が続く形）
   if ((m = t.match(/^(.+?\D)[\s　]*[（(]?(\d{1,3}|上|中|下)[)）]?\s*(?:巻|話)?\s+(\S.*)$/)) && !/^\d/.test(m[3]) && (r = ok(m[1], m[2]))) return r;
+  // ○○(1)副題（かっこの直後に副題が続く形）
+  if ((m = t.match(/^(.+?\D)[\s　]*[（(](\d{1,3}|上|中|下)[)）]\s*(\D.*)$/)) && (r = ok(m[1], m[2]))) return r;
   // ○○ 上 / ○○(下)
   if ((m = t.match(/^(.+?)[\s　]*[（(]?(上|中|下|前編|後編)[)）]?$/)) && (r = ok(m[1], m[2]))) return r;
   return { series: '', vol: null };
@@ -95,13 +105,13 @@ function migrateOld(list) {
     series: o.series ?? parseSeries(o.title).series, vol: o.vol ?? parseSeries(o.title).vol, genre: o.genre || genreFromText(o.title) || 'その他',
     format: o.format || '紙', place: o.place || '', status: o.status === 'sold' ? 'sold' : 'own',
     read: normRead(o.read), readAt: normRead(o.read) === '読んだ' ? (o.readAt || '') : '', pubdate: o.pubdate || '', boughtAt: o.boughtAt || dstr(o.addedAt) || today(),
-    cover: o.cover || '', memo: o.memo || '', listPrice: o.listPrice ?? null, paid: o.paid ?? null, paidAuto: o.paidAuto ?? false, folder: o.folder || '', pisbn: o.pisbn || '', trial: !!o.trial, genreSet: !!o.genreSet, soldAt: o.soldAt || '', soldTo: o.soldTo || '', soldPrice: o.soldPrice ?? null, soldLot: o.soldLot || '', addedAt: o.addedAt || Date.now() }));
+    cover: o.cover || '', memo: o.memo || '', listPrice: o.listPrice ?? null, paid: o.paid ?? null, paidAuto: o.paidAuto ?? false, folder: o.folder || '', pisbn: o.pisbn || '', trial: !!o.trial, genreSet: !!o.genreSet, soldAt: o.soldAt || '', soldTo: o.soldTo || '', soldPrice: o.soldPrice ?? null, soldLot: o.soldLot || '', prevId: o.prevId || '', addedAt: o.addedAt || Date.now() }));
 }
 // 保存するときは空の項目を省いて小さくする（本が何千冊になっても入るように）。読み込むときに空の項目を戻す
 const BLANK = { title: '', author: '', publisher: '', isbn: '', asin: '', series: '', vol: null, genre: 'その他', format: '紙', place: '', status: 'own', read: '', readAt: '', pubdate: '', boughtAt: '',
-  cover: '', memo: '', soldAt: '', soldTo: '', soldPrice: null, soldLot: '', folder: '', pisbn: '', listPrice: null, paid: null, paidAuto: false, trial: false, genreSet: false };
+  cover: '', memo: '', soldAt: '', soldTo: '', soldPrice: null, soldLot: '', folder: '', pisbn: '', prevId: '', listPrice: null, paid: null, paidAuto: false, trial: false, genreSet: false };
 const compact = b => { const o = {}; for (const [k, v] of Object.entries(b)) if (v !== '' && v != null && v !== false) o[k] = v; return o; };
-function setBooks(list) { books = new Map(list.map(b => { b = { ...BLANK, ...b }; const r = normRead(b.read); return [b.id, { ...b, read: r, readAt: r === '読んだ' ? (b.readAt || '') : '' }]; })); }
+function setBooks(list) { sibIx = null; twinIx = null; books = new Map(list.map(b => { b = { ...BLANK, ...b }; const r = normRead(b.read); return [b.id, { ...b, read: r, readAt: r === '読んだ' ? (b.readAt || '') : '' }]; })); }
 function load() {
   let list = [];
   try { list = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { list = null; }
@@ -121,9 +131,30 @@ function save() {
       .catch(() => { saveFailed = true; toast('保存できませんでした。iPhoneの空き容量を確かめてください。'); });
   }
 }
-function putMany(list) { const now = Date.now(); list.forEach(b => { b.updatedAt = now; books.set(b.id, b); }); save(); render(); }
+// 削除した本を覚えておき、次にKindleやBOOK☆WALKERのCSVを取り込んだときに出さない（元に戻したら忘れる）
+const delKeys = b => [b.isbn && 'i' + b.isbn, b.asin && 'a' + b.asin, b.title && 't' + norm(b.title) + '|' + b.format].filter(Boolean);
+let delSet = null;
+const getDel = () => delSet || (delSet = (() => { try { return new Set(JSON.parse(lsGet('hondana.deleted', '[]'))); } catch (e) { return new Set(); } })());
+function rememberDeleted(list) { const d = getDel(); list.forEach(b => delKeys(b).forEach(k => d.add(k))); lsSet('hondana.deleted', JSON.stringify([...d])); }
+function forgetDeleted(list) { const d = getDel(); if (!d.size) return; let ch = false; list.forEach(b => delKeys(b).forEach(k => { if (d.delete(k)) ch = true; })); if (ch) lsSet('hondana.deleted', JSON.stringify([...d])); }
+const wasDeleted = b => { const d = getDel(); return d.size > 0 && delKeys(b).some(k => d.has(k)); };
+function putMany(list) {
+  sibIx = null; twinIx = null; forgetDeleted(list.filter(b => !books.has(b.id))); const now = Date.now(), fresh = list.filter(b => !books.has(b.id) && !b.trial && b.status !== 'sold' && b.series);
+  list.forEach(b => { b.updatedAt = now; books.set(b.id, b); });
+  if (fresh.length) untrialSeries(fresh, now);
+  save(); render();
+}
+// 続きを買ったら、同じシリーズ・同じストアのお試しを普通の本に戻す（Kindleの無料キャンペーンは本物の1巻をもらっていることが多いため）。
+// ただし書名に「期間限定無料」「お試し版」とある無料版は、別の商品なのでお試しのまま
+function untrialSeries(fresh, now) {
+  const keys = new Map(); fresh.forEach(b => keys.set(seriesKey(b) + '|' + b.format, true));
+  for (const t of books.values()) {
+    if (!t.trial || t.status === 'sold' || !t.series || !keys.has(seriesKey(t) + '|' + t.format) || FREE_TITLE.test(nfkc(t.title))) continue;
+    books.set(t.id, { ...t, trial: false, updatedAt: now });
+  }
+}
 const put = b => putMany([b]);
-function removeBook(id) { books.delete(id); save(); dropPhoto(id).then(render); render(); }
+function removeBook(id) { sibIx = null; twinIx = null; const gone = books.get(id); if (gone) rememberDeleted([gone]); books.delete(id); save(); dropPhoto(id).then(render); render(); }
 const lsGet = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 function loadLists() {
@@ -250,13 +281,33 @@ let ncTimer; const saveNoCov = () => { clearTimeout(ncTimer); ncTimer = setTimeo
 // 表紙の候補を順番に試す：撮った写真 → 調べたときの表紙 → Amazon（ISBN-10）→ 国立国会図書館
 function isbn10(i13) { if (!/^978\d{10}$/.test(i13 || '')) return ''; const c = i13.slice(3, 12); let t = 0; for (let i = 0; i < 9; i++) t += (+c[i]) * (10 - i); const d = (11 - t % 11) % 11; return c + (d === 10 ? 'X' : d); }
 const workUrl = new Map(); // 本のid → 実際に表示できた表紙のURL（この起動中だけ覚える）
-function coverCands(b) {
+// 紙と電子の両方で持っている本：電子の本が覚えている紙のISBN、または同じシリーズの同じ巻・同じ書名で見つける
+let twinIx = null;
+const isE = b => b.format !== '紙';
+function twinsOf(b) {
+  if (!twinIx) { twinIx = new Map(); const add = (k, x) => { if (!k) return; if (!twinIx.has(k)) twinIx.set(k, []); twinIx.get(k).push(x); };
+    for (const x of books.values()) { add(sibKey(x), x); if (x.format === '紙' && x.isbn) add('p' + x.isbn, x); if (isE(x) && x.pisbn) add('p' + x.pisbn, x); } }
+  const keys = [sibKey(b), b.format === '紙' ? b.isbn && 'p' + b.isbn : b.pisbn && 'p' + b.pisbn].filter(k => k && k.length > 2);
+  const out = new Map(); for (const k of keys) for (const x of twinIx.get(k) || []) if (x.id !== b.id && isE(x) !== isE(b)) out.set(x.id, x);
+  return [...out.values()];
+}
+const hasEtwin = b => b.format === '紙' && twinsOf(b).some(x => x.status !== 'sold');
+// 表紙の手がかりがない本（BOOK☆WALKERの本など）は、同じ作品・同じ巻の別の本（Kindle版や紙の本）の表紙を借りる
+let sibIx = null;
+const sibKey = b => b.series && b.vol ? 's' + seriesKey(b) + '|' + b.vol : 't' + norm(nfkc(b.title || '').replace(/【[^】]*】|［[^］]*］|[(（][^()（）]*[)）]/g, ''));
+const ownCover = b => photos.has(b.id) || (b.cover && !/ndlsearch/.test(b.cover)) || b.isbn || b.pisbn || (b.asin && /^B0/i.test(b.asin));
+function sibling(b) {
+  if (!sibIx) { sibIx = new Map(); for (const x of books.values()) if (ownCover(x)) { const k = sibKey(x); if (k.length > 2 && !sibIx.has(k)) sibIx.set(k, x); } }
+  const x = sibIx.get(sibKey(b)); return x && x.id !== b.id ? x : null;
+}
+function coverCands(b, noSib) {
   const out = [], add = u => { u = httpsUrl(u); if (u && !out.includes(u)) out.push(u); };
   if (workUrl.has(b.id)) add(workUrl.get(b.id));
   if (b.cover && !/ndlsearch/.test(b.cover)) add(b.cover);
   const i10 = isbn10(b.isbn || b.pisbn); if (i10) add(`https://images-na.ssl-images-amazon.com/images/P/${i10}.09.LZZZZZZZ.jpg`);
   if (b.asin && /^B0/i.test(b.asin)) add(`https://images-na.ssl-images-amazon.com/images/P/${b.asin}.09.LZZZZZZZ.jpg`);
   if (b.isbn || b.pisbn) add('https://ndlsearch.ndl.go.jp/thumbnail/' + (b.isbn || b.pisbn) + '.jpg');
+  if (!out.length && !noSib) { const x = sibling(b); if (x) { if (photos.has(x.id)) out.push(photos.get(x.id)); coverCands(x, true).forEach(add); } }
   return out;
 }
 window.__nc = (img, id) => {
@@ -284,7 +335,7 @@ async function photoBlob(file) {
 }
 async function setPhoto(id, blob) {
   await idb.put(id, blob); const old = photos.get(id); if (old) URL.revokeObjectURL(old);
-  photos.set(id, URL.createObjectURL(blob)); if (noCov.delete(id)) saveNoCov();
+  photos.set(id, URL.createObjectURL(blob)); sibIx = null; if (noCov.delete(id)) saveNoCov();
 }
 async function dropPhoto(id) { try { await idb.del(id); } catch (e) {} const old = photos.get(id); if (old) URL.revokeObjectURL(old); photos.delete(id); }
 
@@ -298,10 +349,12 @@ const svgSearch = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" s
 const svgBack = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
 
 function passes(b) {
+  if (ui.genre !== 'all' && !GENRES.includes(ui.genre)) ui.genre = 'all';
   if (ui.status === 'trial') { if (!b.trial) return false; }
   else if (b.trial && ui.status !== 'all' && !query) return false;
   if (ui.status === 'own' && b.status === 'sold') return false;
   if (ui.status === 'sold' && b.status !== 'sold') return false;
+  if (ui.status === 'both' && (b.status === 'sold' || !hasEtwin(b))) return false;
   if (ui.status === 'nocover' && (b.status === 'sold' || hasCover(b))) return false;
   if (['読んだ', 'まだ', 'unset'].includes(ui.status) && (b.status === 'sold' || (b.read || 'unset') !== ui.status)) return false;
   if (ui.genre !== 'all' && (b.genre || 'その他') !== ui.genre) return false;
@@ -347,7 +400,7 @@ function tileHtml(g) {
     return `<button class="tile${pk(bs.map(b => b.id))}" data-folder="${esc(g.folder)}"><div class="cv folder">${heads.slice(0, 4).map(b => `<div class="fm">${coverHtml(b, 'cv mini4')}</div>`).join('')}<span class="badge">${bs.length}冊</span></div><span class="tt">${esc(bs[0].folder)}</span></button>`;
   }
   const bs = g.books.slice().sort((a, b) => (a.vol || 0) - (b.vol || 0)), top = (bs.find(b => photos.has(b.id)) || bs.find(b => b.cover && !/ndlsearch/.test(b.cover)) || bs.find(b => b.isbn || b.asin || b.pisbn) || bs[0]), m = missingVols(bs);
-  return `<button class="tile${pk(bs.map(b => b.id))}" data-series="${esc(g.key)}"><div class="stack">${coverHtml({ ...top, title: bs[0].series })}<span class="badge">${m.total ? `${bs.filter(b => b.status !== 'sold').length}/${m.total}` : bs.length + '冊'}</span>${m.miss.length ? '<span class="miss" title="抜けている巻があります"></span>' : ''}</div><span class="tt">${esc(bs[0].series)}</span></button>`;
+  return `<button class="tile${pk(bs.map(b => b.id))}" data-series="${esc(g.key)}"><div class="stack">${coverHtml({ ...top, title: bs[0].series })}<span class="badge">${(() => { const nt = bs.filter(b => !b.trial), c = nt.length ? nt : bs; return m.total ? `${c.filter(b => b.status !== 'sold').length}/${m.total}` : c.length + '冊'; })()}</span>${m.miss.length ? '<span class="miss" title="抜けている巻があります"></span>' : ''}</div><span class="tt">${esc(bs[0].series)}</span></button>`;
 }
 function resultsHtml(inFolder) {
   const gs = groups(inFolder);
@@ -367,21 +420,20 @@ function renderHome() {
   const nRead = own.filter(b => b.read === '読んだ').length, nYet = own.filter(b => b.read === 'まだ').length;
   const last = lsGet('hondana.lastBackup', '');
   const needBk = own.length >= 10 && (!last || Date.now() - Date.parse(last) > 30 * 864e5);
-  const chips = [['all', 'すべて'], ...GENRES.map(g => [g, g])].map(([v, l]) => `<button class="chip" data-genre="${v}" aria-pressed="${ui.genre === v}">${l}</button>`).join('');
-  const statusOpts = [['own', '持っている'], ['読んだ', '読んだ'], ['まだ', 'まだ読んでない'], ['unset', '読んだか未設定'], ['sold', '売った'], ['nocover', '表紙なし'], ['trial', 'お試し'], ['all', 'すべて']].map(([v, l]) => `<option value="${v}" ${ui.status === v ? 'selected' : ''}>${l}</option>`).join('');
+  const genreOpts = [['all', 'すべてのジャンル'], ...GENRES.map(g => [g, g])].map(([v, l]) => `<option value="${esc(v)}" ${ui.genre === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
+  const statusOpts = [['own', '持っている'], ['読んだ', '読んだ'], ['まだ', 'まだ読んでない'], ['unset', '読んだか未設定'], ['sold', '売った'], ['nocover', '表紙なし'], ['trial', 'お試し'], ['both', '紙と電子の両方'], ['all', 'すべて']].map(([v, l]) => `<option value="${v}" ${ui.status === v ? 'selected' : ''}>${l}</option>`).join('');
   app.innerHTML = `<div class="top">
     <div class="hrow"><div><h1>わたしの本棚</h1><p class="stats">持っている ${own.length}冊・読んだ ${nRead}冊${nYet ? `・まだ ${nYet}冊` : ''}${nTrial ? `・お試し ${nTrial}冊` : ''}</p></div>
       <div style="display:flex;gap:8px;align-items:center">
         <svg width="40" height="40" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="17" fill="none" stroke="var(--gold)" stroke-width="1.2"/><path d="M25 9L15 24h7l-3 11 11-16h-7z" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linejoin="round"/></svg>
         <button class="icon-btn" id="menuBtn" aria-label="メニュー"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c9cfdc" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button></div></div>
     <label class="search">${svgSearch}<input id="q" type="search" placeholder="書名・著者・ISBN（書店で「持ってたっけ？」にも）" value="${esc(query)}" aria-label="本を探す"></label>
-    <div class="chips">${chips}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <select class="sel" id="genreSel" aria-label="ジャンル">${genreOpts}</select>
       <select class="sel" id="statusSel" aria-label="状態">${statusOpts}</select>
       <select class="sel" id="fmtSel" aria-label="ストア"><option value="all">すべてのストア</option>${FORMATS.map(f => `<option ${ui.format === f ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select>
       <select class="sel" id="sortSel" aria-label="並び順"><option value="new" ${ui.sort === 'new' ? 'selected' : ''}>追加が新しい順</option><option value="title" ${ui.sort === 'title' ? 'selected' : ''}>書名順</option></select>
       <div style="flex:1"></div>
-      <button class="icon-btn" id="selBtn" style="height:36px;width:auto;padding:0 12px;font-size:14px;color:#c9cfdc">選ぶ</button>
       <button class="icon-btn vt" id="viewBtn" aria-pressed="${ui.view === 'shelf'}" aria-label="${ui.view === 'shelf' ? '表紙の表示に切り替え' : '背表紙の棚に切り替え'}" style="height:36px;border-color:var(--blue)">${ui.view === 'shelf'
       ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="9"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>'
       : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.8" aria-hidden="true"><path d="M5 4v16M10 6v14M15 4v16M20 7v13M3 20h18"/></svg>'}</button>
@@ -397,7 +449,7 @@ function renderHome() {
   $('statusSel').onchange = e => { ui.status = e.target.value; saveUi(); render(); };
   $('sortSel').onchange = e => { ui.sort = e.target.value; saveUi(); render(); };
   $('fmtSel').onchange = e => { ui.format = e.target.value; saveUi(); render(); };
-  $('selBtn').onclick = () => startSelect();
+  $('genreSel').onchange = e => { ui.genre = e.target.value; saveUi(); render(); };
   $('viewBtn').onclick = () => { ui.view = ui.view === 'shelf' ? 'grid' : 'shelf'; saveUi(); render(); };
   $('menuBtn').onclick = openMenu;
   if ($('bkNow')) $('bkNow').onclick = exportCsv;
@@ -408,18 +460,21 @@ function infoRows(rows) { return `<div class="info">${rows.filter(r => r[1]).map
 function renderSeries(key) {
   const bs = [...books.values()].filter(b => seriesKey(b) === key).sort((a, b) => (a.vol || 1e9) - (b.vol || 1e9) || (a.addedAt - b.addedAt));
   if (!bs.length) { location.hash = ''; return; }
-  const own = bs.filter(b => b.status !== 'sold'), m = missingVols(bs, key), name = bs[0].series;
+  // お試し（無料版）は、ちゃんと持っている巻と分けて数える。同じ巻に買った版があれば、そちらを表に出す
+  const trials = bs.filter(b => b.trial), real = bs.filter(b => !b.trial);
+  const own0 = bs.filter(b => b.status !== 'sold'), ownR = own0.filter(b => !b.trial), own = ownR.length ? ownR : own0, m = missingVols(bs, key), name = bs[0].series;
   const authors = [...new Set(bs.flatMap(b => String(b.author || '').split(/[・、]/)).map(x => x.trim()).filter(Boolean))].slice(0, 3).join('・');
   const fm = [...new Set(own.map(b => b.format))].join('・'), places = [...new Set(own.map(b => b.place).filter(Boolean))].join('、');
   const pubs = [...new Set(bs.map(b => b.publisher).filter(Boolean))].join('、');
-  const byVol = new Map(); bs.forEach(b => { if (b.vol && !byVol.has(+b.vol)) byVol.set(+b.vol, b); });
+  const byVol = new Map(); [...real, ...trials].forEach(b => { if (b.vol && !byVol.has(+b.vol)) byVol.set(+b.vol, b); });
   const tiles = [];
   if (m.max) for (let i = 1; i <= m.max; i++) {
     const b = byVol.get(i);
-    tiles.push(b ? `<button class="vol" data-book="${esc(b.id)}" style="background:${tint(name)}${b.status === 'sold' ? ';opacity:.4' : ''}" aria-label="${i}巻">${volImg(b)}<span class="n">${i}${FMARK[b.format] ? ' ' + FMARK[b.format] : ''}</span></button>`
+    tiles.push(b ? `<button class="vol${sel && sel.has(b.id) ? ' picked' : ''}" data-book="${esc(b.id)}" style="background:${tint(name)}${b.status === 'sold' || b.trial ? ';opacity:.4' : ''}" aria-label="${i}巻${b.trial ? '（お試し）' : ''}">${volImg(b)}<span class="n">${i}${b.trial ? ' 試' : FMARK[b.format] ? ' ' + FMARK[b.format] : ''}</span></button>`
       : `<button class="vol gap" data-addvol="${i}" aria-label="${i}巻を追加"><b>${i}</b>なし</button>`);
   }
-  bs.filter(b => !b.vol || ![...byVol.values()].includes(b)).forEach(b => tiles.push(`<button class="vol" data-book="${esc(b.id)}" style="background:${tint(name)}">${volImg(b)}<span class="n">${esc((b.title || '').slice(0, 4))}</span></button>`));
+  const shown = new Set(byVol.values()), extraTrials = trials.filter(b => !shown.has(b));
+  real.filter(b => !shown.has(b)).forEach(b => tiles.push(`<button class="vol${sel && sel.has(b.id) ? ' picked' : ''}" data-book="${esc(b.id)}" style="background:${tint(name)}">${volImg(b)}<span class="n">${esc((b.title || '').slice(0, 4))}</span></button>`));
   const top = (bs.find(b => photos.has(b.id)) || bs.find(b => b.cover && !/ndlsearch/.test(b.cover)) || bs.find(b => b.isbn || b.asin || b.pisbn) || bs[0]);
   const fold = bs.find(b => b.folder)?.folder || '', money = sumPaid(own);
   app.innerHTML = `<div class="page">
@@ -427,10 +482,11 @@ function renderSeries(key) {
     <div class="hero"><div class="cvbox"><div class="stack">${coverHtml({ ...top, title: name })}</div></div>
       <div style="display:flex;flex-direction:column;justify-content:center;gap:2px">
         <h2>${esc(name)}</h2>${authors ? `<p class="sub">${esc(authors)}</p>` : ''}
-        <p style="margin:8px 0 0;font-size:14px">${m.total ? `全${m.total}巻のうち ` : m.max ? `${m.max}巻まで、` : ''}<b style="color:var(--gold)">${own.length}冊</b> 持っています${m.total && !m.miss.length && own.length >= m.total ? '<br><span style="color:var(--gold)">全巻そろっています</span>' : ''}</p>
+        <p style="margin:8px 0 0;font-size:14px">${m.total ? `全${m.total}巻のうち ` : m.max ? `${m.max}巻まで、` : ''}<b style="color:var(--gold)">${own.length}冊</b> 持っています${ownR.length && trials.length ? `<span class="note">（ほかにお試し${trials.length}冊）</span>` : ''}${m.total && !m.miss.length && own.length >= m.total ? '<br><span style="color:var(--gold)">全巻そろっています</span>' : ''}</p>
         ${m.miss.length ? `<p style="margin:2px 0 0;font-size:13px;color:var(--blue);font-weight:700">${m.miss.length > 4 ? m.miss.slice(0, 4).join('・') + '巻ほか' : m.miss.join('・') + '巻'}がありません</p>` : ''}
       </div></div>
     <h3>巻</h3><div class="vols">${tiles.join('')}</div>
+    ${extraTrials.length ? `<h3>お試し・無料版（${extraTrials.length}冊）</h3><p class="note" style="margin:-4px 0 8px">買った巻と同じ巻の無料版です。普段の本棚には出ません。</p><div class="vols">${extraTrials.map(b => `<button class="vol${sel && sel.has(b.id) ? ' picked' : ''}" data-book="${esc(b.id)}" style="background:${tint(name)};opacity:.45">${volImg(b)}<span class="n">${b.vol || esc((b.title || '').slice(0, 4))} 試</span></button>`).join('')}</div>` : ''}
     ${infoRows([['形態', esc(fm)], ['置き場所', esc(places)], ['出版社', esc(pubs)], ['使ったお金', money.n ? `${yen(money.sum)}${money.n < own.length ? `<span class="note">（値段がわかる${money.n}冊分）</span>` : ''}` : ''], ['まとまり', fold ? esc(fold) : '']])}
     <label class="ir" style="align-items:center"><span>全何巻？</span><span style="display:flex;align-items:center;gap:6px">全<input id="serTotal" inputmode="numeric" value="${m.total || ''}" placeholder="${m.max || ''}" style="width:64px;height:40px;border:1px solid var(--ctl);border-radius:8px;background:var(--p1);text-align:center;font-size:16px">巻</span></label>
     <label class="ir" style="align-items:center"><span>ジャンル（全巻）</span><select id="serGenre" class="sel" style="height:40px">${GENRES.map(g => `<option ${g === (bs.find(b => b.genre !== 'その他') || bs[0]).genre ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
@@ -459,6 +515,11 @@ function renderBook(id) {
       ${b.trial ? '<p style="margin:4px 0 0;font-size:13px;color:var(--blue);font-weight:700">お試し（普段の本棚には出ません）</p>' : ''}
     </div>
     ${b.status === 'sold' ? '' : `<div class="seg" role="group" aria-label="読書の状態">${READS.map(r => `<button data-read="${r}" aria-pressed="${b.read === r}">${r}</button>`).join('')}</div><p class="note" style="margin:6px 0 0;text-align:center">${b.read ? 'もう一度押すと、未設定に戻ります' : 'まだ何も付けていません'}</p>`}
+    ${(() => { const tw = twinsOf(b), prev = b.prevId && books.get(b.prevId), next = [...books.values()].find(x => x.prevId === b.id);
+      const lines = tw.map(x => x.status === 'sold' ? `${x.format === '紙' ? '紙の版' : x.format + '版'}は${jdate(x.soldAt) || ''}に売りました` : x.format === '紙' ? `紙でも持っています${x.place ? `（${esc(x.place)}）` : ''}` : `電子でも持っています（${esc(x.format)}）`);
+      if (prev) lines.push(`前にも持っていました（${[jdate(prev.soldAt), prev.soldTo ? esc(prev.soldTo) + 'へ' : ''].filter(Boolean).join(' ')}売った）`);
+      if (next) lines.push(`${jdate(next.boughtAt) || ''}に買い戻しました`);
+      return lines.length ? `<div class="info" style="margin-bottom:8px">${lines.map((l, i) => `<div class="ir"><span>${i ? '' : 'ほかの1冊'}</span><span>${l}</span></div>`).join('')}</div>` : ''; })()}
     ${infoRows([['読み終えた日', b.read === '読んだ' && b.readAt ? jdate(b.readAt) : ''], ['シリーズ', b.series ? esc(b.series) + (b.vol ? ` ${b.vol}巻` : '') : ''], ['出版社', esc(b.publisher)], ['出版日', jdate(b.pubdate)], ['形態', esc(b.format)], ['購入日', jdate(b.boughtAt)], ['定価', b.listPrice != null ? `${yen(b.listPrice)}<span class="note">（税込${yen(taxIn(b.listPrice))}）</span>` : ''], ['買った値段', b.paid != null ? yen(b.paid) : ''], ['まとまり', b.folder ? esc(b.folder) : ''], ['置き場所', esc(b.place)], ['ジャンル', esc(b.genre)], ['ISBN', esc(b.isbn)],
       ['売った日', b.status === 'sold' ? jdate(b.soldAt) || '—' : ''], ['売った先', b.status === 'sold' ? esc(b.soldTo) : ''], ['金額', b.status === 'sold' && b.soldPrice ? (b.soldLot ? `${esc(b.soldLot)}<span class="note">（1冊あたり約${yen(b.soldPrice)}）</span>` : yen(b.soldPrice)) : ''], ['メモ', esc(b.memo).replace(/\n/g, '<br>')]])}
     <div class="row" style="margin-top:20px"><button class="btn" id="bSold">${b.status === 'sold' ? '持っているに戻す' : '売った'}</button><button class="btn gold" id="bEdit">編集</button></div>
@@ -488,11 +549,12 @@ function renderBook(id) {
   $('bSold').onclick = () => { if (b.status === 'sold') { put({ ...b, status: 'own', soldAt: '', soldTo: '', soldPrice: null, soldLot: '' }); toast('持っているに戻しました'); } else { const nb = { ...b, status: 'sold', soldAt: today() }; put(nb); openEdit(nb, '売った先や金額も残せます'); } };
   let armed = false;
   $('bDel').onclick = async () => { if (!armed) { armed = true; $('bDel').textContent = 'もう一度押すと削除します'; return; } const keep = photos.has(b.id) ? await idb.all().then(m => m.get(b.id)).catch(() => null) : null;
-    removeBook(b.id); go(''); toast(`「${b.title || 'ISBN ' + b.isbn}」を削除しました`, async () => { if (keep) await setPhoto(b.id, keep); put(b); }); };
+    const key = seriesKey(b), back = inSeries ? '#s-' + encodeURIComponent(key) : b.folder ? '#f-' + encodeURIComponent(folderKey(b)) : '';
+    removeBook(b.id); go(back); toast(`「${(b.title || 'ISBN ' + b.isbn).slice(0, 24)}${(b.title || '').length > 24 ? '…' : ''}」を削除しました`, async () => { if (keep) await setPhoto(b.id, keep); put(b); }); };
 }
 function render() {
   const h = decodeURIComponent(location.hash.slice(1));
-  if (!h.startsWith('f-') && h) endSelect(true);
+  if (!h.startsWith('f-') && !h.startsWith('s-') && h) endSelect(true);
   if (h.startsWith('s-')) renderSeries(h.slice(2)); else if (h.startsWith('b-')) renderBook(h.slice(2)); else if (h.startsWith('f-')) renderFolder(h.slice(2)); else renderHome();
   $('fab').hidden = h.startsWith('b-') || !!sel;
   $('selBar').hidden = !sel; if (sel) updateSelBar(); updFsel();
@@ -500,13 +562,20 @@ function render() {
   $('places').innerHTML = [...new Set([...books.values()].map(b => b.place).filter(Boolean))].map(p => `<option value="${esc(p)}">`).join('');
 }
 const go = h => { if (location.hash === h) render(); else location.hash = h; };
-window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+// 画面ごとに、どこまで見ていたかを覚えておく。本棚・まとまり・シリーズに戻ったら、その位置に戻す
+const scrollPos = new Map(); let curHash = location.hash;
+window.addEventListener('scroll', () => { scrollPos.set(curHash, scrollY); }, { passive: true });
+window.addEventListener('hashchange', () => {
+  render(); curHash = location.hash; const h = decodeURIComponent(location.hash.slice(1));
+  const y = (!h || h.startsWith('f-') || h.startsWith('s-')) ? (scrollPos.get(curHash) || 0) : 0;
+  window.scrollTo(0, y); requestAnimationFrame(() => window.scrollTo(0, y));
+});
 // 下までスクロールしても「選ぶ」をすぐ押せるように、上の「選ぶ」が見えなくなったら左下に出す
+// 「選ぶ」は左下にいつも置く（本棚・まとまり・シリーズの画面で）
 function updFsel() {
-  const b = $('selBtn') || $('fSel'), off = !b || sel || document.querySelector('.veil.on') ? true : b.getBoundingClientRect().bottom > 0;
-  $('fselBtn').hidden = off;
+  const h = decodeURIComponent(location.hash.slice(1)), page = !h || h.startsWith('f-') || h.startsWith('s-');
+  $('fselBtn').hidden = !page || !!sel || !!document.querySelector('.veil.on');
 }
-window.addEventListener('scroll', updFsel, { passive: true });
 $('fselBtn').onclick = () => startSelect();
 // まとめたあと、まとまりが画面の外へ移ったら「見る」で連れていく
 function lookFolder(name) {
@@ -517,7 +586,7 @@ function lookFolder(name) {
 app.addEventListener('click', e => {
   if (suppressClick) { suppressClick = false; e.preventDefault(); e.stopPropagation(); return; }
   const t = e.target.closest('[data-book],[data-series],[data-folder],[data-home],[data-genre],[data-addvol]'); if (!t) return;
-  if (sel && t.matches('.tile,.sp')) { toggleTile(t); return; }
+  if (sel && t.matches('.tile,.sp,.vol[data-book]')) { toggleTile(t); return; }
   if (t.dataset.folder != null && t.matches('.tile,[data-go]')) { go('#f-' + encodeURIComponent(t.dataset.folder)); return; }
   if (t.dataset.genre) { ui.genre = t.dataset.genre; saveUi(); render(); return; }
   if (t.dataset.addvol) { const key = decodeURIComponent(location.hash.slice(3)); const ex = [...books.values()].find(b => seriesKey(b) === key); openScan({ mode: 'add', format: ex?.format, place: ex?.place, genre: ex && ex.genre !== 'その他' ? ex.genre : '' }); return; }
@@ -604,15 +673,27 @@ const SCAN_TITLE = { check: '持っているか確かめる', add: 'バーコー
 function setScanMode(m) {
   scanMode = m; sellMode = m === 'sell'; lsSet('hondana.scanMode', m); $('vScan').dataset.mode = m;
   $('scanMode').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === m)));
-  $('sellBox').hidden = m !== 'sell'; $('scanContBox').hidden = m !== 'add'; $('scanPlaceBox').hidden = m !== 'add'; $('scanFields').hidden = m === 'check';
+  $('sellBox').hidden = m !== 'sell'; $('scanContBox').hidden = m !== 'add'; $('scanPlaceBox').hidden = m !== 'add'; $('scanMore').hidden = m === 'check'; updScanMore();
   $('scanT').textContent = SCAN_TITLE[m]; $('scanList').innerHTML = ''; lastAdded = null;
   if (m === 'sell') { if (!$('sellAt').value) $('sellAt').value = today(); if (!$('sellTo').value) $('sellTo').value = lsGet('hondana.lastSoldTo', ''); updSellSum(); }
   scanSay(m === 'sell' ? '売る本のバーコード（978で始まる上の段）を、1冊ずつ映してください。'
     : m === 'check' ? 'バーコード（978で始まる上の段）を映すと、持っているかどうかを教えます。ここでは登録しません。'
     : '本の裏のバーコード（978で始まる上の段）を、枠の中に横向きに映してください。続けて下の段も読むと、ジャンルと定価が入ります。');
 }
+// たたんだ「詳しく設定する」の横に、今の設定を短く出す
+function updScanMore() {
+  const p = [$('scanFmt').value, scanMode === 'add' && $('scanPlace').value.trim(), $('scanGenre').value || 'ジャンル自動', $('scanRead').value].filter(Boolean);
+  $('scanMoreSum').textContent = p.join('・');
+}
+['scanFmt', 'scanPlace', 'scanGenre', 'scanRead'].forEach(id => $(id).addEventListener('change', updScanMore));
 $('scanMode').addEventListener('click', e => { const t = e.target.closest('[data-m]'); if (!t || t.dataset.m === scanMode) return; if (sellMode && sellSession.length) finishSell(); setScanMode(t.dataset.m); });
 // 確かめるだけ：持っているかを教える。持っていなければ「登録する」も出す
+// 売った本を買い戻したら、新しい1冊として登録して、前の1冊とつなげる
+function rebuy(old, extra) {
+  const nb = { ...BLANK, id: newId(), addedAt: Date.now(), boughtAt: today(), prevId: old.id };
+  for (const k of ['title', 'author', 'publisher', 'isbn', 'pisbn', 'asin', 'series', 'vol', 'genre', 'genreSet', 'pubdate', 'cover', 'listPrice', 'format', 'folder']) nb[k] = old[k];
+  Object.assign(nb, extra || {}); put(nb); return nb;
+}
 async function onCheckIsbn(isbn) {
   const same = [...books.values()].filter(x => x.isbn === isbn || x.pisbn === isbn), own = same.filter(x => x.status !== 'sold');
   const li = document.createElement('li'); li.className = 'chk-res';
@@ -620,6 +701,8 @@ async function onCheckIsbn(isbn) {
     const b = own[0] || same[0], how = own.length ? `持っています（${[b.format, b.place, b.read || '', b.trial ? 'お試し' : ''].filter(Boolean).join('・')}）` : `売った本です（${jdate(b.soldAt) || '日付なし'}）`;
     li.innerHTML = `<div class="mini">${coverHtml(b)}</div><span style="flex:1"><span class="yes"></span><br><span class="t"></span></span>`;
     li.querySelector('.yes').textContent = how; li.querySelector('.t').textContent = b.title || 'ISBN ' + isbn;
+    if (!own.length) { const bt = document.createElement('button'); bt.className = 'btn'; bt.style.cssText = 'min-height:34px;flex:none;padding:0 10px;font-size:13px'; bt.textContent = '買い戻した';
+      bt.onclick = () => { rebuy(b); bt.disabled = true; bt.textContent = '登録しました'; scanSay(`「${b.title || 'ISBN ' + isbn}」を買い戻した1冊として登録しました`); }; li.append(bt); }
     scanSay(own.length ? '持っています！' : 'この本は前に売りました', !own.length);
   } else {
     scanSay(`ISBN ${isbn} を調べています…`); const r = await lookup(isbn), nb = bookFromLookup(isbn, r, { format: '紙' });
@@ -692,6 +775,8 @@ async function tick() {
       if (g && b.genre !== g && !b.genreSet && !$('scanGenre').value) { nb.genre = g; said.push(`ジャンル「${g}」`); }
       if (lp && b.listPrice == null) { nb.listPrice = lp; if (!sellMode && (b.paid == null || b.paidAuto)) { nb.paid = taxIn(lp); nb.paidAuto = true; } said.push(`定価${yen(lp)}`); }
       if (said.length) { put(nb); scanSay(`${said.join('と')}を入れました。次の本をどうぞ。`); if (sellMode) { updSellSum(); const li = $('scanList').firstElementChild?.querySelector('span'); if (li && lp) li.textContent = (nb.title || `ISBN ${nb.isbn}`) + `（定価${yen(lp)}）`; } } } break; }
+    // 本以外のバーコード（CDやグッズのJANコードなど）は、読めたことだけ知らせる
+    if (!isbn && !cc && /^\d{8,13}$/.test(c) && !/^19[12]/.test(c)) { lastCode = c; lastAt = Date.now(); scanSay('本のバーコードではないようです。本の裏の、978で始まるバーコードを映してください。', true); }
   }
   if (stream) scanTimer = setTimeout(tick, 160);
 }
@@ -700,7 +785,11 @@ async function onIsbn(isbn) {
   if (scanMode === 'check') { await onCheckIsbn(isbn); return; }
   if (sellMode) { await onSellIsbn(isbn); return; }
   const fmt = $('scanFmt').value, place = $('scanPlace').value.trim(), rd = $('scanRead').value, gn = $('scanGenre').value; lsSet('hondana.lastFmt', fmt); if (place) lsSet('hondana.lastPlace', place);
-  const d = findDup({ isbn });
+  const same = [...books.values()].filter(x => x.isbn === isbn), d = same.find(x => x.status !== 'sold') || null, soldOne = !d && same.find(x => x.status === 'sold');
+  if (soldOne && $('scanCont').checked) {
+    const nb = rebuy(soldOne, { place, ...(rd ? { read: rd } : {}) }); lastAdded = { id: nb.id, at: Date.now() }; scanCount++;
+    scanSay(`前に売った「${soldOne.title || 'ISBN ' + isbn}」を、買い戻した1冊として登録しました。次の本をどうぞ。`); return;
+  }
   if (!$('scanCont').checked) {
     closeV('vScan'); openEdit(bookFromLookup(isbn, null, { format: fmt, place, read: rd, genre: gn, genreFixed: !!gn })); $('fIsbn').dispatchEvent(new Event('change')); return;
   }
@@ -770,6 +859,8 @@ function genreFromLabel(l) {
   if (/文庫|ノベル|novel|e-books|単行本/i.test(l)) return '小説';
   return '';
 }
+// 書名に「期間限定無料」「無料お試し版」などと書いてある電子書籍は、最初からお試しにする
+const FREE_TITLE = /期間限定\s*無料|無料\s*お試し|お試し版|試し読み|【無料】|無料版/;
 function recordToBook(o, fmtDefault) {
   const g = k => { const v = o[k]; return Array.isArray(v) ? v.join('・') : (v == null ? '' : String(v).trim()); };
   const title = g('title'), isbn = normIsbn(g('isbn')), asin = g('asin').toUpperCase();
@@ -781,7 +872,7 @@ function recordToBook(o, fmtDefault) {
   const added = Date.parse(g('addedAt'));
   return { id: newId(), title, author: cleanAuthor(g('author')) || g('author'), publisher: g('publisher'), isbn, asin, series: g('series') || ps.series, vol: vol > 0 ? vol : ps.vol,
     genre: g('genre') && g('genre') !== 'その他' ? g('genre') : (genreFromLabel(g('label')) || genreFromText(title, g('publisher')) || (fmt !== '紙' && ps.vol && !NOT_MANGA.test(title) ? '漫画' : 'その他')), format: fmt, place: g('place'),
-    trial: /はい|true|1|yes/i.test(g('trial')) || /アーカイブ/.test(g('archive')), folder: g('folder'), pisbn: normIsbn(g('pisbn')), soldLot: g('soldLot'),
+    trial: /はい|true|1|yes/i.test(g('trial')) || /アーカイブ/.test(g('archive')) || (fmt !== '紙' && FREE_TITLE.test(nfkc(title))), folder: g('folder'), pisbn: normIsbn(g('pisbn')), soldLot: g('soldLot'),
     listPrice: g('listPrice').replace(/\D/g, '') ? +g('listPrice').replace(/\D/g, '') : null, paid: g('paid').replace(/\D/g, '') !== '' ? +g('paid').replace(/\D/g, '') : null, status: /売|sold/.test(g('status')) ? 'sold' : 'own', read, readAt: read === '読んだ' ? toDate(g('readAt')) : '', pubdate: normPubdate(g('pubdate')), boughtAt: toDate(o.boughtAt) || today(),
     cover, memo: g('memo'), soldAt: toDate(g('soldAt')), soldTo: g('soldTo'), soldPrice: price ? +price : null, addedAt: isNaN(added) ? Date.now() : added };
 }
@@ -820,9 +911,10 @@ $('fileIn').addEventListener('change', async () => {
   const dupOf = b => (b.isbn && ix.get('i' + b.isbn)) || (b.asin && ix.get('a' + b.asin)) || (norm(b.title) && ix.get('t' + norm(b.title) + '|' + b.format)) || null;
   cands = recs.map(r => recordToBook(r, fmtDefault)).filter(Boolean).filter(b => { const k = b.isbn || b.asin || norm(b.title) + '|' + b.format; if (seen.has(k)) return false; seen.add(k); return true; })
     .map(b => ({ b, dup: dupOf(b) }));
+  const nDel = cands.filter(c => !c.dup && wasDeleted(c.b)).length; if (nDel) cands = cands.filter(c => c.dup || !wasDeleted(c.b));
   const nArc = isBW ? cands.filter(c => c.b.trial && !c.dup).length : 0;
   $('impT').textContent = isBW ? 'BOOK☆WALKERの本を取り込む' : fileMode === 'kindle' ? 'Kindleの本を取り込む' : 'CSVから戻す'; $('pasteBox').hidden = true;
-  $('impMsg').textContent = nArc ? `BOOK☆WALKERで「アーカイブ」にしていた${nArc}冊は、お試しとして入れます（普段の本棚には出ませんが、検索すれば見つかります）。` : '';
+  $('impMsg').textContent = (nArc ? `BOOK☆WALKERで「アーカイブ」にしていた${nArc}冊は、お試しとして入れます（普段の本棚には出ませんが、検索すれば見つかります）。` : '') + (nDel ? `前に削除した${nDel}冊は、一覧に出していません。` : '');
   showCands(); openV('vImp');
 });
 const UIWORDS = ['すべて', 'すべて選択', '選択', '選択した項目', '選択した項目を削除', '本を読む', '読書を続ける', '続きを読む', '並べ替え', '並び替え', '表示', 'フィルター', '絞り込み', '検索', '購入日', '購入済み', 'ダウンロード', 'ダウンロード済み', '既読', '未読', '読む', '今すぐ読む', 'もっと見る', '次へ', '前へ', 'ページ', '件', '冊', 'アクション', 'その他のアクション', '詳細', '削除', '返却', '貸し出し', 'コレクション', 'コレクションに追加', 'ライブラリ', 'ライブラリから削除', '本棚', 'ホーム', 'ストア', 'ストアへ', 'タイトル', '著者', '著者名', '日付', 'メニュー', 'ログアウト', 'ヘルプ', 'シリーズ', '巻', 'new', 'sale', 'ポイント',
@@ -917,19 +1009,30 @@ async function exportFull() {
 
 /* ---------- まとめて選ぶ（お試しにする／まとめて削除） ---------- */
 let bulk = null;
-function openBulk(o) {
+// 候補でチェックを外したまま実行したものは覚えておいて、次から出さない（o.dismiss に覚える場所の名前）
+const bulkKey = it => it.key || (it.group ? 'g:' + it.group.map(b => b.id).sort().join(',') : 'b:' + it.b.id);
+const dismissed = name => { try { return new Set(JSON.parse(lsGet('hondana.dismiss.' + name, '[]'))); } catch (e) { return new Set(); } };
+function openBulk(o, showAll) {
+  if (o.dismiss) { const d = dismissed(o.dismiss); o.allItems = o.allItems || o.items; o.items = showAll ? o.allItems : o.allItems.filter(it => !d.has(bulkKey(it))); o.hiddenN = o.allItems.length - o.items.length; }
+  $('bulkMore').hidden = !o.hiddenN; $('bulkMore').textContent = `前に外した候補も出す（${o.hiddenN || 0}件）`;
   bulk = o;
-  $('bulkT').textContent = o.title; $('bulkNote').textContent = o.note; $('bulkGo').textContent = o.action; $('bulkGo').className = 'btn ' + (o.danger ? 'danger' : 'gold');
+  $('bulkT').textContent = o.title; $('bulkNote').textContent = o.note + (o.dismiss === 'folder' ? '　チェックしないまま実行した候補は、次から出しません。' : o.dismiss ? '　チェックを外して実行した候補は、次から出しません。' : ''); $('bulkGo').textContent = o.action; $('bulkGo').className = 'btn ' + (o.danger ? 'danger' : 'gold');
   $('bulkList').innerHTML = o.items.length ? o.items.map((it, i) => `<label><input type="checkbox" data-i="${i}" ${it.checked ? 'checked' : ''}><span>${esc(it.label || it.b.title || 'ISBN ' + it.b.isbn)}${it.tag ? ` <span class="tag">${esc(it.tag)}</span>` : ''}</span></label>`).join('') : '<p class="note" style="padding:12px">当てはまる本はありませんでした。</p>';
-  bulkCount(); $('bulkGo').dataset.armed = ''; closeV('vMenu'); openV('vBulk');
+  bulkCount(); $('bulkGo').dataset.armed = ''; bulkLabel(); closeV('vMenu'); openV('vBulk');
 }
 const bulkBooks = it => it.group || [it.b];
-function bulkCount() { const ch = [...$('bulkList').querySelectorAll('input:checked')].map(x => bulk.items[+x.dataset.i]), n = ch.reduce((a, it) => a + bulkBooks(it).length, 0), all = bulk.items.reduce((a, it) => a + bulkBooks(it).length, 0); $('bulkSum').textContent = `${all}冊中 ${n}冊を選んでいます`; $('bulkGo').disabled = !n; $('bulkGo').dataset.armed = ''; $('bulkGo').textContent = bulk.action; }
+function bulkCount() { const ch = [...$('bulkList').querySelectorAll('input:checked')].map(x => bulk.items[+x.dataset.i]), n = ch.reduce((a, it) => a + bulkBooks(it).length, 0), all = bulk.items.reduce((a, it) => a + bulkBooks(it).length, 0); $('bulkSum').textContent = `${all}冊中 ${n}冊を選んでいます`; $('bulkGo').disabled = (!n) && !(bulk.dismiss === 'folder' && bulk.items.length); $('bulkGo').dataset.armed = ''; $('bulkGo').textContent = bulk.action; }
 $('bulkList').addEventListener('change', bulkCount);
-$('bulkAll').onclick = () => { const bs = [...$('bulkList').querySelectorAll('input')], on = bs.some(b => !b.checked); bs.forEach(b => b.checked = on); bulkCount(); };
+$('bulkList').addEventListener('change', bulkLabel);
+function bulkLabel() { if (!bulk || $('bulkGo').dataset.armed) return; const n = $('bulkList').querySelectorAll('input:checked').length; $('bulkGo').textContent = bulk.dismiss === 'folder' && !n && bulk.items.length ? 'どれも選ばない（次から出さない）' : bulk.action; }
+$('bulkMore').onclick = () => { const o = bulk; openBulk(o, true); };
+$('bulkAll').onclick = () => { const bs = [...$('bulkList').querySelectorAll('input')], on = bs.some(b => !b.checked); bs.forEach(b => b.checked = on); bulkCount(); bulkLabel(); };
 $('bulkGo').onclick = async () => {
-  const sel = [...$('bulkList').querySelectorAll('input:checked')].flatMap(x => bulkBooks(bulk.items[+x.dataset.i])); if (!sel.length) return;
+  const sel = [...$('bulkList').querySelectorAll('input:checked')].flatMap(x => bulkBooks(bulk.items[+x.dataset.i]));
+  if (!sel.length) { if (bulk.dismiss === 'folder' && bulk.items.length) { const d = dismissed(bulk.dismiss); bulk.items.forEach(it => d.add(bulkKey(it))); lsSet('hondana.dismiss.' + bulk.dismiss, JSON.stringify([...d])); closeV('vBulk'); toast('どれも選ばなかったので、この候補は次から出しません'); } return; }
   if (bulk.danger && !$('bulkGo').dataset.armed) { $('bulkGo').dataset.armed = '1'; $('bulkGo').textContent = `もう一度押すと ${sel.length}冊を削除します`; return; }
+  // まとまりの候補：チェックしなかったものは全部覚える。お試しの候補：最初はチェックが付いていたのに外したものだけ覚える（候補が何百もあるため）
+  if (bulk.dismiss) { const d = dismissed(bulk.dismiss); [...$('bulkList').querySelectorAll('input')].forEach(x => { const it = bulk.items[+x.dataset.i], k = bulkKey(it); if (x.checked) d.delete(k); else if (bulk.dismiss === 'folder' || it.checked) d.add(k); }); lsSet('hondana.dismiss.' + bulk.dismiss, JSON.stringify([...d])); }
   await bulk.run(sel); closeV('vBulk');
 };
 function trialCandidates() {
@@ -946,12 +1049,25 @@ function trialCandidates() {
     bs.forEach(b => seen.add(b.id)); out.push({ b: bs[0], group: bs, label: `${bs[0].series}（1〜${bs.length}巻）`, tag: `無料っぽい・${jdate(bs[0].boughtAt)}`, checked: false });
   }
   live.filter(b => b.format !== '紙' && !b.series && /第?[1１一]話/.test(nfkc(b.title))).forEach(b => add(b, '第1話だけ', false));
+  // 別のストアで続きを買っている作品の、こちらのストアの最初の数巻（無料キャンペーンで両方からもらったもの）
+  const allBySer = new Map(); [...books.values()].filter(b => b.status !== 'sold' && b.format !== '紙' && b.series).forEach(b => { const k = seriesKey(b); if (!allBySer.has(k)) allBySer.set(k, []); allBySer.get(k).push(b); });
+  for (const [k, bs] of allBySer) {
+    const fm = new Map(); bs.forEach(b => { if (!fm.has(b.format)) fm.set(b.format, []); fm.get(b.format).push(b); }); if (fm.size < 2) continue;
+    for (const [f, mine] of fm) {
+      const cand = mine.filter(b => !b.trial && !seen.has(b.id)); if (!cand.length) continue;
+      const maxMine = Math.max(...mine.map(b => +b.vol || 0)); if (maxMine > 3) continue;
+      const other = [...fm].filter(([g]) => g !== f).flatMap(([, x]) => x.filter(b => !b.trial)), maxOther = Math.max(0, ...other.map(b => +b.vol || 0));
+      if (maxOther <= maxMine || !cand.every(b => other.some(o => +o.vol === +b.vol))) continue;
+      cand.forEach(b => seen.add(b.id)); const vs = cand.map(b => +b.vol).sort((a, b) => a - b);
+      out.push({ b: cand[0], group: cand, label: `${cand[0].series}（${f}の${vs.length > 1 ? vs[0] + '〜' + vs[vs.length - 1] : vs[0]}巻）`, tag: `${[...new Set(other.map(b => b.format))].join('・')}で${maxOther}巻まで持っている`, checked: true });
+    }
+  }
   return out;
 }
 $('mTrial').onclick = () => openBulk({
   title: 'お試しの本を選ぶ', action: 'お試しにする',
   note: '無料版や、1巻だけ持っている電子書籍、同じ日にまとめて手に入れた1〜3巻だけの漫画（無料キャンペーンでもらったものが多いはず）を並べました。全巻そろえて完結している作品もまざるので、チェックして選んでください。お試しにした本は普段の本棚には出ませんが、検索すれば見つかります。あとで「お試し」の絞り込みから、まとめて消せます。',
-  items: trialCandidates(),
+  items: trialCandidates(), dismiss: 'trial',
   run: sel => { putMany(sel.map(b => ({ ...b, trial: true }))); toast(`${sel.length}冊をお試しにしました`, () => putMany(sel.map(b => ({ ...books.get(b.id), trial: false })))); },
 });
 function openTrialDelete() {
@@ -962,7 +1078,7 @@ function openTrialDelete() {
     items,
     run: async sel => {
       let keep = new Map(); try { const m = await idb.all(); sel.forEach(b => { if (m.has(b.id)) keep.set(b.id, m.get(b.id)); }); } catch (e) {}
-      sel.forEach(b => books.delete(b.id)); save(); for (const b of sel) await dropPhoto(b.id); render();
+      rememberDeleted(sel); sel.forEach(b => books.delete(b.id)); save(); for (const b of sel) await dropPhoto(b.id); render();
       toast(`${sel.length}冊を削除しました`, async () => { for (const [k, v] of keep) await setPhoto(k, v); putMany(sel); });
     },
   });
@@ -1002,7 +1118,7 @@ $('selBar').addEventListener('click', async e => {
   const act = t.dataset.act, list = selBooks();
   if (act === 'cancel') { endSelect(); return; }
   if (act === 'all') {
-    const tiles = [...app.querySelectorAll('.tile,.sp')], all = tiles.flatMap(x => idsOfTile(x)), on = !all.every(id => sel.has(id));
+    const tiles = [...app.querySelectorAll('.tile,.sp,.vol[data-book]')], all = tiles.flatMap(x => idsOfTile(x)), on = !all.every(id => sel.has(id));
     all.forEach(id => on ? sel.add(id) : sel.delete(id)); tiles.forEach(x => x.classList.toggle('picked', on)); updateSelBar(); return;
   }
   if (!list.length) return;
@@ -1020,7 +1136,7 @@ $('selBar').addEventListener('click', async e => {
   else if (act === 'delete') {
     if (!t.dataset.armed) { t.dataset.armed = '1'; t.textContent = `もう一度押すと${list.length}冊を削除`; return; }
     t.dataset.armed = ''; const keep = new Map(); try { const m = await idb.all(); list.forEach(b => { if (m.has(b.id)) keep.set(b.id, m.get(b.id)); }); } catch (er) {}
-    list.forEach(b => books.delete(b.id)); save(); for (const b of list) await dropPhoto(b.id); endSelect();
+    rememberDeleted(list); list.forEach(b => books.delete(b.id)); save(); for (const b of list) await dropPhoto(b.id); endSelect();
     toast(`${list.length}冊を削除しました`, async () => { for (const [k, v] of keep) await setPhoto(k, v); putMany(list); });
   }
 });
@@ -1083,56 +1199,12 @@ function renderFolder(key) {
     <div style="padding:0 20px"><button class="back" data-home>${svgBack}本棚</button>
     <h2 style="margin:4px 0 0;font:700 24px/1.3 var(--serif);color:var(--gold)">${esc(name)}</h2>
     <p class="sub">${nSer}作品・${own.length}冊${money.n ? `・${yen(money.sum)}` : ''}</p>
-    <div class="row" style="margin-top:12px;flex-wrap:nowrap"><button class="btn" id="fRename" style="min-height:40px;padding:0 8px;font-size:14px;white-space:nowrap">名前を変える</button><button class="btn" id="fSel" style="min-height:40px;padding:0 8px;font-size:14px">選ぶ</button><button class="btn danger" id="fUndo" style="min-height:40px;padding:0 8px;font-size:14px;white-space:nowrap">まとまりを解く</button></div></div>
+    <div class="row" style="margin-top:12px;flex-wrap:nowrap"><button class="btn" id="fRename" style="min-height:40px;padding:0 8px;font-size:14px;white-space:nowrap">名前を変える</button><button class="btn danger" id="fUndo" style="min-height:40px;padding:0 8px;font-size:14px;white-space:nowrap">まとまりを解く</button></div></div>
     ${resultsHtml(key)}
   </div>`;
   $('fRename').onclick = () => openPick({ title: 'まとまりの名前', input: { value: name }, onPick: v => { v = String(v).trim(); if (!v) return; putMany(all.map(b => ({ ...b, folder: v }))); go('#f-' + encodeURIComponent(norm(v))); toast('名前を変えました'); } });
-  $('fSel').onclick = () => startSelect();
   let armed = false;
   $('fUndo').onclick = () => { if (!armed) { armed = true; $('fUndo').textContent = 'もう一度押す'; return; } const before = all.map(b => ({ ...b })); putMany(all.map(b => ({ ...b, folder: '' }))); go(''); toast(`「${name}」を解きました（本はそのままです）`, () => putMany(before)); };
-}
-
-/* 長押しして別の表紙に重ねると、ひとつのまとまりになる */
-let drag = null, lp = null;
-app.addEventListener('contextmenu', e => { if (e.target.closest('.grid .tile')) e.preventDefault(); });
-app.addEventListener('pointerdown', e => {
-  if (sel || drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
-  const tile = e.target.closest('.grid .tile'); if (!tile) return;
-  const sx = e.clientX, sy = e.clientY;
-  clearTimeout(lp?.timer);
-  lp = { tile, sx, sy, id: e.pointerId, timer: setTimeout(() => beginDrag(tile, lp.x ?? sx, lp.y ?? sy), 480) };
-});
-function beginDrag(tile, x, y) {
-  const r = tile.getBoundingClientRect(), g = tile.querySelector('.cv,.stack').cloneNode(true);
-  const ghost = document.createElement('div'); ghost.className = 'ghost'; ghost.style.width = r.width + 'px'; ghost.appendChild(g); document.body.append(ghost);
-  drag = { tile, ghost, w: r.width, over: null }; tile.classList.add('dragging'); moveGhost(x, y);
-  try { navigator.vibrate?.(30); } catch (e) {}
-}
-function moveGhost(x, y) {
-  drag.ghost.style.transform = `translate(${x - drag.w / 2}px,${y - drag.w * .75}px) scale(1.05)`;
-  const el = document.elementFromPoint(x, y)?.closest('.grid .tile');
-  const over = el && el !== drag.tile ? el : null;
-  if (over !== drag.over) { drag.over?.classList.remove('dropto'); over?.classList.add('dropto'); drag.over = over; }
-}
-document.addEventListener('pointermove', e => {
-  if (drag) { moveGhost(e.clientX, e.clientY); return; }
-  if (lp) { lp.x = e.clientX; lp.y = e.clientY; if (Math.hypot(e.clientX - lp.sx, e.clientY - lp.sy) > 10) { clearTimeout(lp.timer); lp = null; } }
-});
-document.addEventListener('touchmove', e => { if (drag) e.preventDefault(); }, { passive: false });
-function endDrag(ok) {
-  clearTimeout(lp?.timer); lp = null; if (!drag) return;
-  const { tile, over, ghost } = drag; ghost.remove(); tile.classList.remove('dragging'); over?.classList.remove('dropto'); drag = null; suppressClick = true; setTimeout(() => { suppressClick = false; }, 400);
-  if (ok && over) mergeTiles(tile, over);
-}
-document.addEventListener('pointerup', () => endDrag(true));
-document.addEventListener('pointercancel', () => endDrag(false));
-function mergeTiles(src, dst) {
-  const a = idsOfTile(src, true).map(id => books.get(id)), b = idsOfTile(dst, true).map(id => books.get(id));
-  const before = [...a, ...b].map(x => ({ ...x }));
-  const apply = name => { putMany([...a, ...b].map(x => ({ ...x, folder: name }))); toast(`「${name}」にまとめました`, () => putMany(before), lookFolder(name)); };
-  if (dst.dataset.folder != null) { apply(b[0].folder); return; }
-  if (src.dataset.folder != null) { apply(a[0].folder); return; }
-  openPick({ title: 'まとまりの名前', input: { value: suggestName([...b, ...a]), placeholder: 'まとまりの名前' }, options: [], onPick: v => { v = String(v).trim(); if (v) apply(v); } });
 }
 
 /* 書名の後ろに付いたシリーズ名（「ラヴクラフト傑作集」「類語辞典シリーズ」など）から、まとまりの候補を探す */
@@ -1152,6 +1224,16 @@ function folderCandidates() {
     const bs = [...m.values()], bases = new Set(bs.map(b => seriesKey(b) || norm(b.title.replace(suf, ''))));
     if (bs.length >= 2 && bases.size >= 2 && bs.every(b => !norm(b.series).includes(norm(suf)))) out.push({ name: suf.replace(/^NHK/, 'NHK '), books: bs, sig: bs.map(b => b.id).sort().join() });
   }
+  // 外伝・続編・超合本版など：シリーズ名の頭が同じもの（「はたらく細胞」と「はたらく細胞BLACK」、「DEAR BOYS」と「DEAR BOYS ACT II」）
+  const bySer = new Map(); for (const b of live) if (b.series) { if (!bySer.has(b.series)) bySer.set(b.series, []); bySer.get(b.series).push(b); }
+  const names = [...bySer.keys()].sort((a, b) => a.length - b.length);
+  for (const a of names) {
+    if (nfkc(a).length < 3) continue;
+    const kids = names.filter(x => x !== a && x.startsWith(a) && (() => { const rest = x.slice(a.length); return /^[\s　~〜～・:：\-－―─!！×(（]/.test(rest) || /^(超合本|合本|外伝|番外|新装|完全版|愛蔵版|act|ACT|第\d)/.test(rest) || (/^[A-Z]/.test(rest) && !/[A-Za-z]$/.test(a)); })());
+    if (!kids.length) continue;
+    const bs = [a, ...kids].flatMap(x => bySer.get(x));
+    out.push({ name: a, books: bs, sig: bs.map(b => b.id).sort().join(), spin: kids.length + 1 });
+  }
   out.sort((x, y) => y.name.length - x.name.length);
   const seen = new Set(); out = out.filter(c => !seen.has(c.sig) && seen.add(c.sig));
   return out.sort((x, y) => y.books.length - x.books.length);
@@ -1160,8 +1242,8 @@ $('mFolders').onclick = () => {
   const cands = folderCandidates();
   openBulk({
     title: 'まとまりの候補', action: 'まとめる',
-    note: '書名の後ろに同じシリーズ名が付いている本を集めました。チェックした候補が、それぞれひとつのまとまりになります。名前はあとで変えられます。',
-    items: cands.map(c => ({ b: { id: c.sig, title: `${c.name}（${c.books.length}冊）`, isbn: '' }, tag: c.books.slice(0, 2).map(b => (b.series || b.title).slice(0, 10)).join('、') + (c.books.length > 2 ? '…' : ''), checked: false, c })),
+    note: '書名の後ろに同じシリーズ名が付いている本や、「はたらく細胞」と「はたらく細胞BLACK」のように外伝・続編・合本版と思われるシリーズを集めました。チェックした候補が、それぞれひとつのまとまりになります。名前はあとで変えられます。',
+    items: cands.map(c => ({ b: { id: c.sig, title: `${c.name}（${c.books.length}冊）`, isbn: '' }, tag: c.spin ? `${c.spin}シリーズ` : c.books.slice(0, 2).map(b => (b.series || b.title).slice(0, 10)).join('、') + (c.books.length > 2 ? '…' : ''), checked: false, c, key: 'f:' + c.name })), dismiss: 'folder',
     run: sel2 => { const picked = cands.filter(c => sel2.some(x => x.id === c.sig)), done = new Set(), up = [];
       for (const c of picked) for (const b of c.books) if (!done.has(b.id)) { done.add(b.id); up.push({ ...b, folder: c.name }); }
       putMany(up); toast(`${picked.length}個のまとまりを作りました`); },
@@ -1252,8 +1334,8 @@ function judge(b, q, c) {
   if ((got.startsWith(want) || want.startsWith(got)) && sameVol && au && got.length > 1) return 'maybe';
   return '';
 }
-async function applyPaper(b, c) {
-  const r = await lookup(c.isbn).catch(() => null), cur = books.get(b.id) || b;
+async function applyPaper(b, c, noLook) {
+  const r = noLook ? null : await lookup(c.isbn).catch(() => null), cur = books.get(b.id) || b;
   const nb = { ...cur, pisbn: c.isbn, enrichTried: true };
   if (!nb.publisher) nb.publisher = (r && r.publisher) || c.publisher || '';
   if (!nb.pubdate) nb.pubdate = (r && r.pubdate) || c.pubdate || '';
@@ -1268,15 +1350,50 @@ function updateEnrichInfo() { const n = enrichTargets(false).length, m = enrichT
 $('enGo').onclick = () => runEnrich(false);
 $('enAgain').onclick = () => runEnrich(true);
 $('enStop').onclick = () => { if (enrichRun) enrichRun.stop = true; };
+// シリーズの巻をまとめて1回で探す：国会図書館にシリーズ名で問い合わせ、返ってきた巻ごとの紙のISBNを配る
+async function seriesPaper(series, author) {
+  const out = new Map();
+  try {
+    const x = await ndlText(`https://ndlsearch.ndl.go.jp/api/opensearch?title=${encodeURIComponent(series)}${author ? '&creator=' + encodeURIComponent(String(author).split(/[・、,]/)[0].replace(/\s/g, '')) : ''}&cnt=200&mediatype=books`, 15000);
+    const d = new DOMParser().parseFromString(x, 'application/xml'), want = norm(series);
+    for (const it of d.querySelectorAll('item')) {
+      const g = n => it.getElementsByTagName(n)[0]?.textContent.trim() || '';
+      const isbn = [...it.getElementsByTagName('dc:identifier')].map(e => normIsbn(e.textContent)).find(Boolean); if (!isbn) continue;
+      const title = g('dc:title'), vtxt = nfkc(g('dcndl:volume')), ps = parseSeries(title + (vtxt && !/\d\s*$/.test(nfkc(title)) ? ' ' + vtxt : ''));
+      const vol = parseInt((vtxt.match(/\d+/) || [])[0] || ps.vol || 0, 10), name = norm(ps.series || title);
+      if (!vol || name !== want) continue; // 外伝や別シリーズ（「進撃の巨人 Before the fall」など）はまぜない
+      if (!out.has(vol)) out.set(vol, []); out.get(vol).push({ isbn, title, vol: String(vol), author: g('dc:creator'), publisher: g('dc:publisher'), pubdate: normPubdate(g('dcterms:issued')) });
+    }
+  } catch (e) {}
+  return out;
+}
 async function runEnrich(again) {
   if (enrichRun) return;
   const list = enrichTargets(again); if (!list.length) return;
   enrichRun = { stop: false }; const maybes = [], buf = []; let sure = 0, none = 0, i = 0;
   $('enGo').disabled = true; $('enAgain').disabled = true; $('enStop').hidden = false; $('enPrev').hidden = true;
   const flush = () => { if (buf.length) { putMany(buf.splice(0)); } };
-  for (const b of list) {
+  // 1) 2冊以上あるシリーズは、シリーズごとにまとめて探す（1冊ずつより何倍も速い）
+  const bySer = new Map(); list.forEach(b => { if (b.series && b.vol) { const k = seriesKey(b); if (!bySer.has(k)) bySer.set(k, []); bySer.get(k).push(b); } });
+  const sers = [...bySer.values()].filter(bs => bs.length >= 2), done = new Set(); let si = 0;
+  for (const bs of sers) {
+    if (enrichRun.stop) break; si++;
+    $('enMsg').textContent = `シリーズごとに探しています ${si}／${sers.length}：${bs[0].series.slice(0, 20)}（見つかった ${sure}冊）`;
+    const byVol = await seriesPaper(bs[0].series, bs.find(b => b.author)?.author);
+    for (const b of bs) {
+      const c0 = byVol.get(+b.vol); if (!c0) continue;
+      const c = c0.find(c => b.publisher && c.publisher && norm(c.publisher).includes(norm(b.publisher).slice(0, 4))) || c0[0];
+      buf.push(await applyPaper(books.get(b.id) || b, c, true)); sure++; done.add(b.id);
+    }
+    if (buf.length >= 15) flush();
+    await sleep(400);
+  }
+  flush();
+  // 2) 残りは1冊ずつ
+  const rest = enrichRun.stop ? [] : list.filter(b => !done.has(b.id)); i = 0;
+  for (const b of rest) {
     if (enrichRun.stop) break; i++;
-    $('enMsg').textContent = `${i}／${list.length}冊目：${b.title.slice(0, 24)}…（見つかった ${sure}冊・確認が必要 ${maybes.length}冊）`;
+    $('enMsg').textContent = `${i}／${rest.length}冊目：${b.title.slice(0, 24)}…（見つかった ${sure}冊・確認が必要 ${maybes.length}冊）`;
     const q = cleanForSearch(b); let cands = await paperCandidates(q);
     // 書名の後ろにシリーズ名が付いていて見つからないときは、最初のまとまりだけでもう一度
     if (!cands.length && !q.series) { const first = q.q.split(' ')[0]; if (first.length >= 3 && first !== q.q) { q.q = first; cands = await paperCandidates(q); } }
@@ -1293,10 +1410,15 @@ async function runEnrich(again) {
   $('enMsg').textContent = `${stopped ? '途中で止めました。' : '終わりました。'}${sure}冊に紙の版の情報を入れました。見つからなかった本：${none}冊。${maybes.length ? `下の${maybes.length}冊は、似た本が見つかったので確かめてください。` : ''}`;
   if (maybes.length) {
     $('enList').innerHTML = maybes.map((m, k) => `<label><input type="checkbox" data-k="${k}"><span>${esc(m.b.title)}<br><span class="note">→ ${esc(cleanTitle(m.c.title, m.c.vol))}・${esc(m.c.publisher || '')} ${esc(jdate(m.c.pubdate))}</span></span></label>`).join('');
-    $('enPrev').hidden = false; $('enApply').onclick = async () => {
-      const pick = [...$('enList').querySelectorAll('input:checked')].map(x => maybes[+x.dataset.k]); const up = [];
-      for (const m of pick) up.push(await applyPaper(m.b, m.c));
-      if (up.length) putMany(up); $('enPrev').hidden = true; toast(`${up.length}冊に紙の版の情報を入れました`);
+    $('enPrev').hidden = false; $('enApply').disabled = false; $('enApply').onclick = async () => {
+      // 押したらすぐ入れる（紙のISBN・出版社・出版日）。表紙やジャンルの細かい情報は、そのあと裏で1冊ずつ調べて足す
+      const pick = [...$('enList').querySelectorAll('input:checked')].map(x => maybes[+x.dataset.k]); if (!pick.length) return;
+      $('enApply').disabled = true; const up = [];
+      for (const m of pick) up.push(await applyPaper(m.b, m.c, true));
+      putMany(up); $('enPrev').hidden = true; toast(`${up.length}冊に紙の版の情報を入れました。表紙などは裏で調べて足していきます`);
+      const buf = [];
+      for (const m of pick) { const b = books.get(m.b.id); if (!b) continue; buf.push(await applyPaper(b, m.c)); if (buf.length >= 10) putMany(buf.splice(0)); }
+      if (buf.length) putMany(buf);
     };
   }
 }
@@ -1372,8 +1494,10 @@ async function runRelook(again) {
 function regroup(onlyAuto) {
   const out = [];
   for (const b of books.values()) {
-    const p = parseSeries(b.title); if (!p.series) continue;
-    if (onlyAuto && !b.asin) continue;
+    const p = parseSeries(b.title);
+    // 前の読み方で「1」のような数字だけのシリーズにされていた本（『1984』など）は、シリーズから外す
+    if (!p.series) { if (onlyAuto === 'empty' && /^\d{1,2}$/.test(nfkc(b.series || '').trim())) out.push({ ...b, series: '', vol: null }); continue; }
+    if (onlyAuto === 'empty' ? (b.series && !/^[\d\s]+$/.test(nfkc(b.series)) && !EDITION_ONLY.test(b.series)) : onlyAuto && !b.asin) continue;
     if (norm(p.series) !== norm(b.series) || (p.vol && p.vol !== b.vol)) out.push({ ...b, series: p.series, vol: p.vol ?? b.vol });
   }
   // 同じシリーズに漫画の巻があれば、ジャンルもそろえる
@@ -1395,11 +1519,13 @@ load();
 // IndexedDB に引っ越し済み（または localStorage が空でそちらにある）ときは、そちらから読む
 if (inIdb() || !books.size) { const ok = await loadFromIdb(); if (ok && !inIdb()) lsSet('hondana.store', 'idb'); }
 if (lsGet('hondana.regroupVer', '') !== '2') { lsSet('hondana.regroupVer', '2'); setTimeout(() => { const n = regroup(true); if (n) toast(`Kindleの本 ${n}冊をシリーズにまとめ直しました`); }, 0); }
+if (lsGet('hondana.freeTrial', '') !== '1') { lsSet('hondana.freeTrial', '1'); setTimeout(() => { const up = [...books.values()].filter(b => !b.trial && b.status !== 'sold' && b.format !== '紙' && FREE_TITLE.test(nfkc(b.title))).map(b => ({ ...b, trial: true })); if (up.length) { putMany(up); toast(`書名に「無料」「お試し版」とある電子書籍 ${up.length}冊を、お試しにしました`); } }, 100); }
+if (lsGet('hondana.regroupVer3', '') !== '1') { lsSet('hondana.regroupVer3', '1'); setTimeout(() => { const n = regroup('empty'); if (n) toast(`シリーズに入っていなかった本 ${n}冊を、シリーズにまとめました`); }, 50); }
 render();
-idb.all().then(m => { for (const [k, blob] of m) { if (books.has(k)) photos.set(k, URL.createObjectURL(blob)); } if (m.has('__bg')) { bgUrl = URL.createObjectURL(m.get('__bg')); applyBg(); } if (m.size) render(); }).catch(() => {});
+idb.all().then(m => { for (const [k, blob] of m) { if (books.has(k)) photos.set(k, URL.createObjectURL(blob)); } sibIx = null; if (m.has('__bg')) { bgUrl = URL.createObjectURL(m.get('__bg')); applyBg(); } if (m.size) render(); }).catch(() => {});
 try { navigator.storage?.persist?.(); } catch (e) {}
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 window.addEventListener('storage', e => { if (e.key === KEY) { load(); render(); } });
 })();
-window.__hondana = { books: () => [...books.values()], parseSeries, genreFromC, priceCode, photos, noCov };
+window.__hondana = { books: () => [...books.values()], putMany, coverCands, parseSeries, genreFromC, priceCode, photos, noCov };
 }
