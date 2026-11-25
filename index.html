@@ -141,7 +141,9 @@ body:has(.selbar:not([hidden])) .toast{bottom:calc(150px + var(--sb))}
 .selacts .btn{flex:none;min-height:44px;padding:0 14px;font-size:14px}
 .btn:disabled{opacity:.4}
 .toast{position:fixed;left:50%;bottom:calc(90px + var(--sb));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;display:none;gap:14px;align-items:center;z-index:30;max-width:92vw;font-size:14px}
-.toast.on{display:flex}.toast button{background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;min-height:34px;padding:0 10px}
+.fsel{position:fixed;left:max(18px,calc(50% - 362px));bottom:calc(20px + var(--sb));height:56px;min-width:56px;padding:0 18px;border-radius:999px;border:1px solid var(--line2);background:var(--p2);color:#c9cfdc;font:700 15px var(--sans);box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:5}
+.tile.flash .cv,.tile.flash .stack{animation:flash 1.6s ease 2}@keyframes flash{0%,100%{box-shadow:0 0 0 0 rgba(210,176,106,0)}50%{box-shadow:0 0 0 4px var(--gold)}}
+.toast.on{display:flex}#tMsg{flex:1;min-width:0}.toast:has(#tGo:not([hidden])){width:min(92vw,400px)}.toast button{white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;min-height:34px;padding:0 10px}
 textarea{resize:vertical}
 @media(prefers-reduced-motion:no-preference){.tile .cv{transition:transform .15s}.tile:active .cv{transform:scale(.97)}}
 </style>
@@ -150,6 +152,7 @@ textarea{resize:vertical}
 <body>
 <div class="wrap" id="app"></div>
 
+<button class="fsel" id="fselBtn" hidden aria-label="本を選ぶ">選ぶ</button>
 <button class="fab" id="fab" aria-label="バーコードで本を追加">
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L5 14h6l-2 8 10-13h-6z"/></svg>バーコードで追加</button>
 
@@ -157,12 +160,19 @@ textarea{resize:vertical}
 <div class="veil" id="vScan" role="dialog" aria-modal="true" aria-labelledby="scanT">
   <div class="sheet">
     <h2><span id="scanT">バーコードを読む</span><button class="x" data-close aria-label="閉じる">×</button></h2>
+    <div class="seg" id="scanMode" role="group" aria-label="読む目的" style="margin:0 0 10px"><button type="button" data-m="add" aria-pressed="true">本棚に登録</button><button type="button" data-m="sell" aria-pressed="false">売る本を読む</button></div>
     <div class="cam"><video id="video" playsinline muted autoplay></video><div class="frame"></div></div>
     <p class="msg" id="scanMsg" aria-live="polite"></p>
-    <label class="chk"><input type="checkbox" id="scanCont" checked> 続けて登録する（読むたびに本棚へ追加）</label>
+    <label class="chk" id="scanContBox"><input type="checkbox" id="scanCont" checked> 続けて登録する（読むたびに本棚へ追加）</label>
+    <div class="fgrid" id="sellBox" hidden style="margin-top:4px">
+      <label class="f">売った日<input type="date" id="sellAt"></label>
+      <label class="f">売った先<input id="sellTo" list="soldTos" autocomplete="off" placeholder="ブックオフ"></label>
+      <p class="note full" style="margin:0">持っている本は「売った」に変わります。まだ登録していない本は、売った本として登録します。売れた金額は「終わる」を押したあとに、まとめて入れられます。</p>
+      <p class="full" id="sellSum" style="margin:0;color:var(--gold);font-weight:700"></p>
+    </div>
     <div class="fgrid" style="margin-top:4px">
       <label class="f">形態<select id="scanFmt"></select></label>
-      <label class="f">置き場所<input id="scanPlace" list="places" autocomplete="off" placeholder="寝室の本棚 上段"></label>
+      <label class="f" id="scanPlaceBox">置き場所<input id="scanPlace" list="places" autocomplete="off" placeholder="寝室の本棚 上段"></label>
       <label class="f">ジャンル<select id="scanGenre"><option value="">自動で判定</option><option>漫画</option><option>小説</option><option>技法書</option><option>その他</option></select></label>
       <label class="f">読んだ？<select id="scanRead"><option value="">未設定のまま</option><option>読んだ</option><option>まだ</option></select></label>
       <p class="note full" style="margin:0">ここで選んだジャンル・読んだ？は、この画面で続けて読む本にまとめて付きます。</p>
@@ -218,6 +228,7 @@ textarea{resize:vertical}
     <h2><span id="menuT">メニュー</span><button class="x" data-close aria-label="閉じる">×</button></h2>
     <button class="opt" id="mKindle"><span><b>Kindleの本を取り込む</b><span>Kindle bookshelf exporter で書き出したCSVやJSONを読み込みます</span></span></button>
     <button class="opt" id="mPaste"><span><b>BOOK☆WALKERなどを貼り付けで取り込む</b><span>本棚ページの文字をコピーして貼り付けます</span></span></button>
+    <button class="opt" id="mSell"><span><b>売る本を読む</b><span>手放す本のバーコードを続けて読んで、「売った」として残します</span></span></button>
     <button class="opt" id="mManual"><span><b>手で1冊追加する</b><span>バーコードのない本や、調べても出てこない本に</span></span></button>
     <button class="opt" id="mTrial"><span><b>お試しの本を選ぶ</b><span>無料版や1巻だけの本をまとめて「お試し」にして、普段の本棚から外します</span></span></button>
     <button class="opt" id="mTrialDel"><span><b>お試しの本をまとめて削除</b><span>お試しにした本を見直して、いらないものを一気に消します</span></span></button>
@@ -232,7 +243,7 @@ textarea{resize:vertical}
     <button class="opt" id="mExport"><span><b>CSVで書き出す</b><span>表計算ソフトでも開ける形。写真の表紙は入りません</span></span></button>
     <button class="opt" id="mRestore"><span><b>バックアップから戻す</b><span>まるごとバックアップやCSVを読み込みます（登録済みの本は飛ばします）</span></span></button>
     <input type="file" id="fileIn" accept=".csv,.json,.txt,text/csv,application/json" hidden>
-    <p class="note" style="margin-bottom:4px">バージョン 3.0.0</p>
+    <p class="note" style="margin-bottom:4px">バージョン 3.1.0</p>
     <p class="note">本のデータはこのiPhoneの中だけに保存されます。書名を調べるときだけ、ISBNを openBD・Google Books・国立国会図書館に問い合わせます。</p>
   </div>
 </div>
@@ -276,6 +287,21 @@ textarea{resize:vertical}
   </div>
 </div>
 
+<!-- 売った本の記録 -->
+<div class="veil" id="vSold" role="dialog" aria-modal="true" aria-labelledby="soldT">
+  <div class="sheet">
+    <h2><span id="soldT">売った本の記録</span><button class="x" data-close aria-label="閉じる">×</button></h2>
+    <p class="note" id="soldInfo" style="margin-top:0"></p>
+    <div class="fgrid">
+      <label class="f">売った日<input type="date" id="sdAt"></label>
+      <label class="f">売った先<input id="sdTo" list="soldTos" autocomplete="off" placeholder="ブックオフ"></label>
+      <label class="f full">まとめていくらで売れた？（円・わからなければ空のまま）<input id="sdTotal" inputmode="numeric" placeholder="例：1200"></label>
+    </div>
+    <p class="note" style="margin:8px 0 0">金額は冊数で割って、1冊ずつに入れます（レシートに1冊ずつ載っていなくても大丈夫です）。</p>
+    <div class="row" style="margin-top:14px"><button class="btn" data-close>あとで</button><button class="btn gold" id="sdOk">記録する</button></div>
+  </div>
+</div>
+
 <!-- ジャンル・ストアを編集 -->
 <div class="veil" id="vLists" role="dialog" aria-modal="true" aria-labelledby="listsT">
   <div class="sheet">
@@ -316,13 +342,13 @@ textarea{resize:vertical}
 <div class="selbar" id="selBar" hidden>
   <div class="selhead"><span id="selCount"></span><button class="btn" data-act="all" style="min-height:36px;flex:none">全部</button><button class="btn" data-act="cancel" style="min-height:36px;flex:none">やめる</button></div>
   <div class="selacts">
-    <button class="btn" data-act="trial">お試し</button><button class="btn" data-act="read">読んだ？</button><button class="btn" data-act="genre">ジャンル</button><button class="btn" data-act="format">ストア</button><button class="btn" data-act="paid">値段</button><button class="btn" data-act="fold">まとめる</button><button class="btn" data-act="unfold">まとまりから外す</button><button class="btn danger" data-act="delete">削除</button>
+    <button class="btn" data-act="trial">お試し</button><button class="btn" data-act="read">読んだ？</button><button class="btn" data-act="genre">ジャンル</button><button class="btn" data-act="format">ストア</button><button class="btn" data-act="paid">値段</button><button class="btn" data-act="sold">売った</button><button class="btn" data-act="fold">まとめる</button><button class="btn" data-act="unfold">まとまりから外す</button><button class="btn danger" data-act="delete">削除</button>
   </div>
 </div>
 
-<datalist id="places"></datalist>
-<div class="toast" id="toast" role="status"><span id="tMsg"></span><button id="tUndo" hidden>元に戻す</button></div>
+<datalist id="places"></datalist><datalist id="soldTos"></datalist>
+<div class="toast" id="toast" role="status"><span id="tMsg"></span><button id="tGo" hidden>見る</button><button id="tUndo" hidden>元に戻す</button></div>
 
-<script src="app.js?v=3.0.0"></script>
+<script src="app.js?v=3.1.0"></script>
 </body>
 </html>
