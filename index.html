@@ -127,7 +127,7 @@ body:has(.selbar:not([hidden])) .toast{bottom:calc(150px + var(--sb))}
 .tile.picked .cv,.tile.picked .stack{outline:3px solid var(--blue);outline-offset:2px;border-radius:4px}
 .tile.picked::after{content:"✓";position:absolute;top:6px;left:6px;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#081020;font:700 14px/24px var(--sans);text-align:center;z-index:3}
 .sp.picked{outline:3px solid var(--blue)}
-.tile{position:relative}
+.tile{position:relative}#results .tile{content-visibility:auto;contain-intrinsic-size:auto 230px}
 .cv.folder{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:4px;padding:6px;background:#1a2440;border:1px solid var(--line)}
 .cv.folder .fm{min-width:0;min-height:0}
 .cv.mini4{aspect-ratio:auto;height:100%;padding:3px;font-size:8px;line-height:1.2;overflow:hidden}
@@ -235,8 +235,8 @@ textarea{resize:vertical}
 <div class="veil" id="vMenu" role="dialog" aria-modal="true" aria-labelledby="menuT">
   <div class="sheet">
     <h2><span id="menuT">メニュー</span><button class="x" data-close aria-label="閉じる">×</button></h2>
-    <button class="opt" id="mKindle"><span><b>Kindleの本を取り込む</b><span>Kindle bookshelf exporter で書き出したCSVやJSONを読み込みます</span></span></button>
-    <button class="opt" id="mPaste"><span><b>BOOK☆WALKERなどを貼り付けで取り込む</b><span>本棚ページの文字をコピーして貼り付けます</span></span></button>
+    <button class="opt" id="mKindle"><span><b>Kindle・BOOK☆WALKERの本を取り込む</b><span>Kindle bookshelf exporter のCSVや、BOOK☆WALKERで書き出したCSVを読み込みます</span></span></button>
+    <button class="opt" id="mPaste"><span><b>ほかのストアの本を貼り付けで取り込む</b><span>本棚ページの文字をコピーして貼り付けます</span></span></button>
     <button class="opt" id="mManual"><span><b>手で1冊追加する</b><span>バーコードのない本や、調べても出てこない本に</span></span></button>
     <button class="opt" id="mTrial"><span><b>お試しの本を選ぶ</b><span>無料版や1巻だけの本をまとめて「お試し」にして、普段の本棚から外します</span></span></button>
     <button class="opt" id="mTrialDel"><span><b>お試しの本をまとめて削除</b><span>お試しにした本を見直して、いらないものを一気に消します</span></span></button>
@@ -253,7 +253,7 @@ textarea{resize:vertical}
     <button class="opt" id="mExport"><span><b>CSVで書き出す</b><span>表計算ソフトでも開ける形。写真の表紙は入りません</span></span></button>
     <button class="opt" id="mRestore"><span><b>バックアップから戻す</b><span>まるごとバックアップやCSVを読み込みます（登録済みの本は飛ばします）</span></span></button>
     <input type="file" id="fileIn" accept=".csv,.json,.txt,text/csv,application/json" hidden>
-    <p class="note" style="margin-bottom:4px">バージョン 3.2.0</p>
+    <p class="note" style="margin-bottom:4px">バージョン 3.3.0</p>
     <p class="note">本のデータはこのiPhoneの中だけに保存されます。書名を調べるときだけ、ISBNを openBD・Google Books・国立国会図書館に問い合わせます。</p>
   </div>
 </div>
@@ -382,6 +382,6 @@ textarea{resize:vertical}
 <datalist id="places"></datalist><datalist id="soldTos"></datalist>
 <div class="toast" id="toast" role="status"><span id="tMsg"></span><button id="tGo" hidden>見る</button><button id="tUndo" hidden>元に戻す</button></div>
 
-<script src="app.js?v=3.2.0"></script>
+<script src="app.js?v=3.3.0"></script>
 </body>
 </html>
