@@ -390,6 +390,8 @@ function groups(inFolder) {
 let serInfo = (() => { try { return JSON.parse(lsGet('hondana.series', '{}')) || {}; } catch (e) { return {}; } })();
 const saveSerInfo = () => lsSet('hondana.series', JSON.stringify(serInfo));
 const totalOf = key => +(serInfo[key] && serInfo[key].total) || 0;
+// 全何巻と比べるときは、冊数ではなく「何巻ぶん持っているか」で数える（紙と電子の両方で持っている巻は1巻と数える）
+function volsOwned(list) { const own = list.filter(b => b.status !== 'sold'), vs = new Set(own.filter(b => b.vol).map(b => +b.vol)); return vs.size + own.filter(b => !b.vol).length; }
 function missingVols(bs, key) {
   const vs = [...new Set(bs.filter(b => b.status !== 'sold' && b.vol).map(b => +b.vol))].sort((a, b) => a - b), total = totalOf(key ?? seriesKey(bs[0] || {}));
   const top = Math.max(vs[vs.length - 1] || 0, total);
@@ -408,7 +410,7 @@ function tileHtml(g) {
     return `<button class="tile${pk(bs.map(b => b.id))}" data-folder="${esc(g.folder)}"><div class="cv folder">${heads.slice(0, 4).map(b => `<div class="fm">${coverHtml(b, 'cv mini4')}</div>`).join('')}<span class="badge">${bs.length}冊</span></div><span class="tt">${esc(bs[0].folder)}</span></button>`;
   }
   const bs = g.books.slice().sort((a, b) => (a.vol || 0) - (b.vol || 0)), top = (bs.find(b => photos.has(b.id)) || bs.find(b => b.cover && !/ndlsearch/.test(b.cover)) || bs.find(b => b.isbn || b.asin || b.pisbn) || bs[0]), m = missingVols(bs);
-  return `<button class="tile${pk(bs.map(b => b.id))}" data-series="${esc(g.key)}"><div class="stack">${coverHtml({ ...top, title: bs[0].series })}<span class="badge">${(() => { const nt = bs.filter(b => !b.trial), c = nt.length ? nt : bs; return m.total ? `${c.filter(b => b.status !== 'sold').length}/${m.total}` : c.length + '冊'; })()}</span>${m.miss.length ? '<span class="miss" title="抜けている巻があります"></span>' : ''}</div><span class="tt">${esc(bs[0].series)}</span></button>`;
+  return `<button class="tile${pk(bs.map(b => b.id))}" data-series="${esc(g.key)}"><div class="stack">${coverHtml({ ...top, title: bs[0].series })}<span class="badge">${(() => { const nt = bs.filter(b => !b.trial), c = nt.length ? nt : bs; return m.total ? `${volsOwned(c)}/${m.total}` : c.length + '冊'; })()}</span>${m.miss.length ? '<span class="miss" title="抜けている巻があります"></span>' : ''}</div><span class="tt">${esc(bs[0].series)}</span></button>`;
 }
 function resultsHtml(inFolder) {
   const gs = groups(inFolder);
@@ -500,7 +502,7 @@ function renderSeries(key) {
     <div class="hero"><div class="cvbox"><div class="stack">${coverHtml({ ...top, title: name })}</div></div>
       <div style="display:flex;flex-direction:column;justify-content:center;gap:2px">
         <h2>${esc(name)}</h2>${authors ? `<p class="sub">${esc(authors)}</p>` : ''}
-        <p style="margin:8px 0 0;font-size:14px">${m.total ? `全${m.total}巻のうち ` : m.max ? `${m.max}巻まで、` : ''}<b style="color:var(--gold)">${own.length}冊</b> 持っています${ownR.length && trials.length ? `<span class="note">（ほかにお試し${trials.length}冊）</span>` : ''}${m.total && !m.miss.length && own.length >= m.total ? '<br><span style="color:var(--gold)">全巻そろっています</span>' : ''}</p>
+        <p style="margin:8px 0 0;font-size:14px">${m.total ? `全${m.total}巻のうち <b style="color:var(--gold)">${volsOwned(own)}巻ぶん</b> 持っています${own.length > volsOwned(own) ? `<span class="note">（${own.length}冊）</span>` : ''}` : `${m.max ? `${m.max}巻まで、` : ''}<b style="color:var(--gold)">${own.length}冊</b> 持っています`}${ownR.length && trials.length ? `<span class="note">（ほかにお試し${trials.length}冊）</span>` : ''}${m.total && !m.miss.length && own.length >= m.total ? '<br><span style="color:var(--gold)">全巻そろっています</span>' : ''}</p>
         ${m.miss.length ? `<p style="margin:2px 0 0;font-size:13px;color:var(--blue);font-weight:700">${m.miss.length > 4 ? m.miss.slice(0, 4).join('・') + '巻ほか' : m.miss.join('・') + '巻'}がありません</p>` : ''}
       </div></div>
     ${volsHtml}${numBtn}
@@ -1340,6 +1342,8 @@ $('mMoney').onclick = () => {
 
 /* ---------- 電子書籍の情報を紙の版から補う ---------- */
 let enrichRun = null;
+// 国会図書館に送る書名から「?」「!」などの記号を外す（「Get Ready?」の「?」で検索がつまずくため）
+const ndlQ = s => unruby(nfkc(s)).replace(/[?？!！"#$%&'*+\/:;<=>@\\^_`{|}~「」『』【】［］〔〕（）()・、。…]/g, ' ').replace(/\s+/g, ' ').trim();
 function cleanForSearch(b) {
   const p = parseSeries(b.title);
   let t = p.series ? `${p.series} ${p.vol}` : nfkc(b.title).replace(/【[^】]*】|［[^］]*］|\[[^\]]*\]/g, ' ').replace(/\s*[(（][^()（）]*[)）]\s*$/, '');
@@ -1348,7 +1352,7 @@ function cleanForSearch(b) {
 async function paperCandidates(q) {
   const out = [];
   try {
-    const x = await ndlText(`https://ndlsearch.ndl.go.jp/api/opensearch?title=${encodeURIComponent(q.series || q.q)}${q.author ? '&creator=' + encodeURIComponent(q.author.replace(/\s/g, '')) : ''}&cnt=15&mediatype=books`, 9000);
+    const x = await ndlText(`https://ndlsearch.ndl.go.jp/api/opensearch?title=${encodeURIComponent(ndlQ(q.series || q.q))}${q.author ? '&creator=' + encodeURIComponent(q.author.replace(/\s/g, '')) : ''}&cnt=15&mediatype=books`, 9000);
     const d = new DOMParser().parseFromString(x, 'application/xml');
     for (const it of d.querySelectorAll('item')) {
       const g = n => it.getElementsByTagName(n)[0]?.textContent.trim() || '';
@@ -1358,7 +1362,7 @@ async function paperCandidates(q) {
   } catch (e) {}
   if (!out.length) {
     try {
-      const j = await fetchJson(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent('intitle:' + q.q + (q.author ? ' inauthor:' + q.author : ''))}&maxResults=10&printType=books`, 9000);
+      const j = await fetchJson(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent('intitle:' + ndlQ(q.q) + (q.author ? ' inauthor:' + q.author : ''))}&maxResults=10&printType=books`, 9000);
       for (const it of (j && j.items) || []) {
         const v = it.volumeInfo || {}, isbn = (v.industryIdentifiers || []).map(x => normIsbn(x.identifier)).find(Boolean);
         if (isbn) out.push({ isbn, title: v.title + (v.subtitle ? ' ' + v.subtitle : ''), vol: '', author: (v.authors || []).join('・'), publisher: v.publisher || '', pubdate: normPubdate(v.publishedDate) });
@@ -1397,7 +1401,7 @@ $('enStop').onclick = () => { if (enrichRun) enrichRun.stop = true; };
 async function seriesPaper(series, author) {
   const out = new Map();
   try {
-    const x = await ndlText(`https://ndlsearch.ndl.go.jp/api/opensearch?title=${encodeURIComponent(series)}${author ? '&creator=' + encodeURIComponent(String(author).split(/[・、,]/)[0].replace(/\s/g, '')) : ''}&cnt=200&mediatype=books`, 15000);
+    const x = await ndlText(`https://ndlsearch.ndl.go.jp/api/opensearch?title=${encodeURIComponent(ndlQ(series))}${author ? '&creator=' + encodeURIComponent(String(author).split(/[・、,]/)[0].replace(/\s/g, '')) : ''}&cnt=200&mediatype=books`, 15000);
     const d = new DOMParser().parseFromString(x, 'application/xml'), want = norm(series);
     for (const it of d.querySelectorAll('item')) {
       const g = n => it.getElementsByTagName(n)[0]?.textContent.trim() || '';
