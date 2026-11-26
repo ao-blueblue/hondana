@@ -4,7 +4,7 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const nfkc = s => String(s || '').normalize('NFKC');
-// 「聖闘士(セイント)星矢」のような読み仮名は外して扱う（漢字のすぐ後ろの、かなだけのかっこ）
+// 「漢字(かんじ)」のような読み仮名は外して扱う（漢字のすぐ後ろの、かなだけのかっこ）
 const RUBY = /([\u3400-\u9FFF々〆ヵヶ])[（(]([ぁ-ゖァ-ヺー・ 　]{1,12})[)）]/g;
 const unruby = s => String(s || '').replace(RUBY, '$1');
 const norm = s => unruby(nfkc(s)).toLowerCase().replace(/[\s・:：\-－―‐()（）\[\]［］【】「」『』〈〉《》!！?？.,、。~〜'"]/g, '');
@@ -59,7 +59,7 @@ function genreFromText(...xs) {
 }
 const NOT_MANGA = /辞典|事典|入門|教科書|講座|図鑑|ガイド|レッスン|ハンドブック|English Edition/i;
 const KANJI_VOL = { '上': 1, '中': 2, '下': 3, '前編': 1, '後編': 2, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 };
-// 【推しの子】のように、かっこの中が書名そのものの本もある。かっこを外したら書名が残らないとき（や「新装版」だけになるとき）は、かっこの中身を書名として読み直す
+// 【作品名】のように、かっこの中が書名そのものの本もある。かっこを外したら書名が残らないとき（や「新装版」だけになるとき）は、かっこの中身を書名として読み直す
 const EDITION_ONLY = /^(新装版|完全版|愛蔵版|文庫版|新版|改訂版|復刻版|特装版|限定版)$/;
 function parseSeries(title) {
   const r = parseSeries1(title, false);
@@ -78,7 +78,7 @@ function parseSeries1(title, keepBr) {
   t = t.replace(/\s+/g, ' ').trim();
   const clean = x => x.replace(/[\s　:：\-－,、.・]+$/, '').replace(/^[\s　:：]+/, '').trim();
   const vnum = x => KANJI_VOL[x] ?? parseInt(x, 10);
-  const ok = (ser, v) => { ser = clean(ser); v = vnum(v); return ser && !/^\d{1,2}$/.test(ser) && v > 0 && v < 2000 ? { series: ser, vol: v } : null; }; // 数字だけのシリーズ名（「【推しの子】 13」→「1」）は作らない
+  const ok = (ser, v) => { ser = clean(ser); v = vnum(v); return ser && !/^\d{1,2}$/.test(ser) && v > 0 && v < 2000 ? { series: ser, vol: v } : null; }; // 数字だけのシリーズ名（「【作品名】 13」→「1」）は作らない
   let m, r;
   // 第一話 ○○
   if ((m = t.match(/^第\s*([0-9一二三四五六七八九十]+)\s*話\s+(.+)$/)) && (r = ok(m[2], m[1]))) return r;
@@ -396,7 +396,7 @@ function missingVols(bs, key) {
   const vs = [...new Set(bs.filter(b => b.status !== 'sold' && b.vol).map(b => +b.vol))].sort((a, b) => a - b), total = totalOf(key ?? seriesKey(bs[0] || {}));
   const top = Math.max(vs[vs.length - 1] || 0, total);
   if (!total && bs.length && bs.every(b => /[上中下](?:巻|[)）\s]|$)/.test(nfkc(b.title)))) return { max: 0, miss: [], total };
-  if (!vs.length) return { max: 0, miss: [], total }; // 巻数のない本ばかり（モルフォなど）は空きの場所を作らない
+  if (!vs.length) return { max: 0, miss: [], total }; // 巻数のない本ばかり（技法書のシリーズなど）は空きの場所を作らない
   if (!total && vs.length < 2 && !(vs.length === 1 && vs[0] > 1)) return { max: top, miss: [], total };
   const miss = []; for (let i = 1; i <= top; i++) if (!vs.includes(i)) miss.push(i);
   return { max: top, miss: miss.length > 60 ? [] : miss, total };
@@ -437,7 +437,6 @@ function renderHome() {
       <div style="display:flex;gap:8px;align-items:center">
         <svg width="40" height="40" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="17" fill="none" stroke="var(--gold)" stroke-width="1.2"/><path d="M25 9L15 24h7l-3 11 11-16h-7z" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linejoin="round"/></svg>
         <button class="icon-btn" id="menuBtn" aria-label="メニュー"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c9cfdc" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button></div></div>
-    <label class="search">${svgSearch}<input id="q" type="search" placeholder="書名・著者・ISBN（書店で「持ってたっけ？」にも）" value="${esc(query)}" aria-label="本を探す"></label>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select class="sel" id="genreSel" aria-label="ジャンル">${genreOpts}</select>
       <select class="sel" id="statusSel" aria-label="状態">${statusOpts}</select>
@@ -452,10 +451,7 @@ function renderHome() {
     ${noTitle ? `<div class="backup"><span>書名がまだ入っていない本が ${noTitle}冊あります。</span><button class="btn" id="rlNow" style="min-height:36px;flex:none">調べ直す</button></div>` : ''}
     ${ui.status === 'trial' && nTrial ? `<div class="backup"><span>お試しの本 ${nTrial}冊。いらなくなったら、まとめて消せます。</span><button class="btn danger" id="trialDelBtn" style="min-height:36px;flex:none">まとめて削除</button></div>` : ''}
     <div id="results">${resultsHtml()}</div>`;
-  const q = $('q');
-  const upd = () => { query = q.value; $('results').innerHTML = resultsHtml(); };
-  q.addEventListener('input', e => { if (!e.isComposing) upd(); });
-  q.addEventListener('compositionend', upd);
+  if (query && $('qbar').hidden) { $('qbar').hidden = false; $('q2').value = query; } // 検索中に描き直しても、検索欄は出したまま
   $('statusSel').onchange = e => { ui.status = e.target.value; saveUi(); render(); };
   $('sortSel').onchange = e => { ui.sort = e.target.value; saveUi(); render(); };
   $('fmtSel').onchange = e => { ui.format = e.target.value; saveUi(); render(); };
@@ -597,17 +593,17 @@ window.addEventListener('hashchange', () => {
 function updFsel() {
   const h = decodeURIComponent(location.hash.slice(1)), page = !h || h.startsWith('f-') || h.startsWith('s-');
   $('fselBtn').hidden = !page || !!sel || !!document.querySelector('.veil.on');
-  $('fsrchBtn').hidden = $('fselBtn').hidden || h.startsWith('s-') || !$('qbar').hidden;
+  $('fsrchBtn').hidden = $('fselBtn').hidden || !!h || !$('qbar').hidden; // 検索は本棚の画面だけ
 }
 $('fselBtn').onclick = () => startSelect();
 // 虫眼鏡：その場で検索欄を降ろす。×で閉じると、検索する前に見ていた位置に戻る
 let qSaved = 0;
 $('fsrchBtn').onclick = () => { qSaved = scrollY; $('qbar').hidden = false; $('q2').value = query; $('q2').focus(); updFsel(); };
-function q2upd() { query = $('q2').value; if ($('q')) $('q').value = query; if ($('results')) $('results').innerHTML = resultsHtml(); window.scrollTo(0, query ? ($('results')?.offsetTop || 0) - 70 : qSaved); }
+function q2upd() { query = $('q2').value; if ($('results')) $('results').innerHTML = resultsHtml(); window.scrollTo(0, query ? ($('results')?.offsetTop || 0) - 70 : qSaved); }
 $('q2').addEventListener('input', e => { if (!e.isComposing) q2upd(); });
 $('q2').addEventListener('compositionend', q2upd);
-$('q2x').onclick = () => { $('qbar').hidden = true; $('q2').value = ''; query = ''; if ($('q')) $('q').value = ''; if ($('results')) $('results').innerHTML = resultsHtml(); window.scrollTo(0, qSaved); requestAnimationFrame(() => window.scrollTo(0, qSaved)); updFsel(); };
-window.addEventListener('hashchange', () => { if (!$('qbar').hidden) { $('qbar').hidden = true; $('q2').value = ''; } });
+$('q2x').onclick = () => { $('qbar').hidden = true; $('q2').value = ''; query = ''; if ($('results')) $('results').innerHTML = resultsHtml(); window.scrollTo(0, qSaved); requestAnimationFrame(() => window.scrollTo(0, qSaved)); updFsel(); };
+window.addEventListener('hashchange', () => { if (!$('qbar').hidden && location.hash) { $('qbar').hidden = true; } });
 // まとめたあと、まとまりが画面の外へ移ったら「見る」で連れていく
 function lookFolder(name) {
   const t = [...document.querySelectorAll('.tile[data-folder]')].find(x => x.dataset.folder === name); if (!t) return null;
@@ -1220,10 +1216,10 @@ $('pickOk').onclick = () => { const v = $('pickIn').value; if (!v.trim()) { $('p
 $('pickIn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('pickOk').click(); } });
 
 /* ---------- まとまり（フォルダ） ---------- */
-function lcsName(a, b) { // ふたつの名前に共通するいちばん長い部分（「賭博黙示録 カイジ」と「賭博破戒録 カイジ」→「カイジ」）
+function lcsName(a, b) { // ふたつの名前に共通するいちばん長い部分（「第一部 主人公名」と「第二部 主人公名」→「主人公名」）
   a = nfkc(a); b = nfkc(b); let best = '';
   for (let i = 0; i < a.length; i++) for (let j = i + best.length + 1; j <= a.length; j++) { const s2 = a.slice(i, j); if (b.includes(s2)) best = s2; else break; }
-  // 単語の途中で切れていたら、切れ端を落とす（「録 カイジ」→「カイジ」）
+  // 単語の途中で切れていたら、切れ端を落とす（「部 主人公名」→「主人公名」）
   const i = a.indexOf(best), j = i + best.length, sep = /[\s・:：\-－]/;
   if (i > 0 && !sep.test(a[i - 1]) && /\s/.test(best)) best = best.slice(best.search(/\s/) + 1);
   if (j < a.length && !sep.test(a[j]) && /\s/.test(best)) best = best.slice(0, best.lastIndexOf(' '));
@@ -1252,7 +1248,7 @@ function renderFolder(key) {
   $('fUndo').onclick = () => { if (!armed) { armed = true; $('fUndo').textContent = 'もう一度押す'; return; } const before = all.map(b => ({ ...b })); putMany(all.map(b => ({ ...b, folder: '' }))); go(''); toast(`「${name}」を解きました（本はそのままです）`, () => putMany(before)); };
 }
 
-/* 書名の後ろに付いたシリーズ名（「ラヴクラフト傑作集」「類語辞典シリーズ」など）から、まとまりの候補を探す */
+/* 書名の後ろに付いたシリーズ名（「○○傑作集」「○○辞典シリーズ」など）から、まとまりの候補を探す */
 function folderCandidates() {
   const live = [...books.values()].filter(b => !b.folder), bySuf = new Map();
   for (const b of live) {
@@ -1269,7 +1265,7 @@ function folderCandidates() {
     const bs = [...m.values()], bases = new Set(bs.map(b => seriesKey(b) || norm(b.title.replace(suf, ''))));
     if (bs.length >= 2 && bases.size >= 2 && bs.every(b => !norm(b.series).includes(norm(suf)))) out.push({ name: suf.replace(/^NHK/, 'NHK '), books: bs, sig: bs.map(b => b.id).sort().join() });
   }
-  // 外伝・続編・超合本版など：シリーズ名の頭が同じもの（「はたらく細胞」と「はたらく細胞BLACK」、「DEAR BOYS」と「DEAR BOYS ACT II」）
+  // 外伝・続編・超合本版など：シリーズ名の頭が同じもの（「作品名」と「作品名 外伝」、「作品名」と「作品名 ACT II」）
   const bySer = new Map(); for (const b of live) if (b.series) { if (!bySer.has(b.series)) bySer.set(b.series, []); bySer.get(b.series).push(b); }
   const names = [...bySer.keys()].sort((a, b) => a.length - b.length);
   for (const a of names) {
@@ -1287,7 +1283,7 @@ $('mFolders').onclick = () => {
   const cands = folderCandidates();
   openBulk({
     title: 'まとまりの候補', action: 'まとめる',
-    note: '書名の後ろに同じシリーズ名が付いている本や、「はたらく細胞」と「はたらく細胞BLACK」のように外伝・続編・合本版と思われるシリーズを集めました。チェックした候補が、それぞれひとつのまとまりになります。名前はあとで変えられます。',
+    note: '書名の後ろに同じシリーズ名が付いている本や、「作品名」と「作品名 外伝」のように外伝・続編・合本版と思われるシリーズを集めました。チェックした候補が、それぞれひとつのまとまりになります。名前はあとで変えられます。',
     items: cands.map(c => ({ b: { id: c.sig, title: `${c.name}（${c.books.length}冊）`, isbn: '' }, tag: c.spin ? `${c.spin}シリーズ` : c.books.slice(0, 2).map(b => (b.series || b.title).slice(0, 10)).join('、') + (c.books.length > 2 ? '…' : ''), checked: false, c, key: 'f:' + c.name })), dismiss: 'folder',
     run: sel2 => { const picked = cands.filter(c => sel2.some(x => x.id === c.sig)), done = new Set(), up = [];
       for (const c of picked) for (const b of c.books) if (!done.has(b.id)) { done.add(b.id); up.push({ ...b, folder: c.name }); }
@@ -1342,7 +1338,7 @@ $('mMoney').onclick = () => {
 
 /* ---------- 電子書籍の情報を紙の版から補う ---------- */
 let enrichRun = null;
-// 国会図書館に送る書名から「?」「!」などの記号を外す（「Get Ready?」の「?」で検索がつまずくため）
+// 国会図書館に送る書名から「?」「!」などの記号を外す（書名に「?」があると検索がつまずくため）
 const ndlQ = s => unruby(nfkc(s)).replace(/[?？!！"#$%&'*+\/:;<=>@\\^_`{|}~「」『』【】［］〔〕（）()・、。…]/g, ' ').replace(/\s+/g, ' ').trim();
 function cleanForSearch(b) {
   const p = parseSeries(b.title);
@@ -1391,7 +1387,24 @@ async function applyPaper(b, c, noLook) {
   if (g && !nb.genreSet) nb.genre = g;
   return nb;
 }
-$('mEnrich').onclick = () => { closeV('vMenu'); $('enMsg').textContent = ''; $('enList').innerHTML = ''; $('enPrev').hidden = true; updateEnrichInfo(); openV('vEnrich'); };
+$('mEnrich').onclick = () => { closeV('vMenu'); $('enMsg').textContent = ''; $('enList').innerHTML = ''; $('enPrev').hidden = true; updateEnrichInfo(); showMaybes(); openV('vEnrich'); };
+// 途中で止めても続きから探せるように：まとめて探し終えたシリーズと、確かめ待ちの候補を覚えておく
+const lsJson = (k, d) => { try { return JSON.parse(lsGet(k, '')) || d; } catch (e) { return d; } };
+const getMaybes = () => lsJson('hondana.enrichMaybe', []).filter(m => books.has(m.id) && !books.get(m.id).pisbn);
+function showMaybes() {
+  const ms = getMaybes(); if (!ms.length) { $('enPrev').hidden = true; return; }
+  $('enList').innerHTML = ms.map((m, k) => `<label><input type="checkbox" data-k="${k}"><span>${esc(books.get(m.id).title)}<br><span class="note">→ ${esc(cleanTitle(m.c.title, m.c.vol))}・${esc(m.c.publisher || '')} ${esc(jdate(m.c.pubdate))}</span></span></label>`).join('');
+  $('enPrev').hidden = false; $('enApply').disabled = false; $('enApply').onclick = async () => {
+    // 押したらすぐ入れる（紙のISBN・出版社・出版日）。表紙やジャンルの細かい情報は、そのあと裏で1冊ずつ調べて足す
+    const pick = [...$('enList').querySelectorAll('input:checked')].map(x => ms[+x.dataset.k]).filter(m => books.has(m.id)); if (!pick.length) return;
+    $('enApply').disabled = true; const up = [];
+    for (const m of pick) up.push(await applyPaper(books.get(m.id), m.c, true));
+    putMany(up); lsSet('hondana.enrichMaybe', '[]'); $('enPrev').hidden = true; toast(`${up.length}冊に紙の版の情報を入れました。表紙などは裏で調べて足していきます`);
+    const buf = [];
+    for (const m of pick) { const b = books.get(m.id); if (!b) continue; buf.push(await applyPaper(b, m.c)); if (buf.length >= 10) putMany(buf.splice(0)); }
+    if (buf.length) putMany(buf);
+  };
+}
 function enrichTargets(again) { return [...books.values()].filter(b => b.format !== '紙' && !b.isbn && !b.pisbn && b.title && !b.trial && (again || !b.enrichTried)); }
 function updateEnrichInfo() { const n = enrichTargets(false).length, m = enrichTargets(true).length; $('enInfo').textContent = `まだ調べていない電子書籍：${n}冊（調べたが見つからなかった本も含めると${m}冊）`; $('enGo').disabled = !n; }
 $('enGo').onclick = () => runEnrich(false);
@@ -1408,7 +1421,7 @@ async function seriesPaper(series, author) {
       const isbn = [...it.getElementsByTagName('dc:identifier')].map(e => normIsbn(e.textContent)).find(Boolean); if (!isbn) continue;
       const title = g('dc:title'), vtxt = nfkc(g('dcndl:volume')), ps = parseSeries(title + (vtxt && !/\d\s*$/.test(nfkc(title)) ? ' ' + vtxt : ''));
       const vol = parseInt((vtxt.match(/\d+/) || [])[0] || ps.vol || 0, 10), name = norm(ps.series || title);
-      if (!vol || name !== want) continue; // 外伝や別シリーズ（「進撃の巨人 Before the fall」など）はまぜない
+      if (!vol || name !== want) continue; // 外伝や別シリーズ（「作品名 外伝」など）はまぜない
       if (!out.has(vol)) out.set(vol, []); out.get(vol).push({ isbn, title, vol: String(vol), author: g('dc:creator'), publisher: g('dc:publisher'), pubdate: normPubdate(g('dcterms:issued')) });
     }
   } catch (e) {}
@@ -1417,16 +1430,19 @@ async function seriesPaper(series, author) {
 async function runEnrich(again) {
   if (enrichRun) return;
   const list = enrichTargets(again); if (!list.length) return;
-  enrichRun = { stop: false }; const maybes = [], buf = []; let sure = 0, none = 0, i = 0;
+  enrichRun = { stop: false }; const maybes = getMaybes(), buf = []; let sure = 0, none = 0, i = 0;
+  if (again) lsSet('hondana.enrichSer', '[]');
+  const serDone = new Set(lsJson('hondana.enrichSer', [])), saveSer = () => lsSet('hondana.enrichSer', JSON.stringify([...serDone]));
+  const saveMaybes = () => lsSet('hondana.enrichMaybe', JSON.stringify(maybes.map(m => ({ id: m.id || m.b.id, c: m.c }))));
   $('enGo').disabled = true; $('enAgain').disabled = true; $('enStop').hidden = false; $('enPrev').hidden = true;
   const flush = () => { if (buf.length) { putMany(buf.splice(0)); } };
   // 1) 2冊以上あるシリーズは、シリーズごとにまとめて探す（1冊ずつより何倍も速い）
   const bySer = new Map(); list.forEach(b => { if (b.series && b.vol) { const k = seriesKey(b); if (!bySer.has(k)) bySer.set(k, []); bySer.get(k).push(b); } });
-  const sers = [...bySer.values()].filter(bs => bs.length >= 2), done = new Set(); let si = 0;
+  const sers = [...bySer.entries()].filter(([k, bs]) => bs.length >= 2 && !serDone.has(k)).map(([k, bs]) => (bs.key = k, bs)), done = new Set(); let si = 0;
   for (const bs of sers) {
     if (enrichRun.stop) break; si++;
     $('enMsg').textContent = `シリーズごとに探しています ${si}／${sers.length}：${bs[0].series.slice(0, 20)}（見つかった ${sure}冊）`;
-    const byVol = await seriesPaper(bs[0].series, bs.find(b => b.author)?.author);
+    const byVol = await seriesPaper(bs[0].series, bs.find(b => b.author)?.author); serDone.add(bs.key); if (si % 5 === 0) saveSer();
     for (const b of bs) {
       const c0 = byVol.get(+b.vol); if (!c0) continue;
       const c = c0.find(c => b.publisher && c.publisher && norm(c.publisher).includes(norm(b.publisher).slice(0, 4))) || c0[0];
@@ -1435,7 +1451,7 @@ async function runEnrich(again) {
     if (buf.length >= 15) flush();
     await sleep(400);
   }
-  flush();
+  flush(); saveSer();
   // 2) 残りは1冊ずつ
   const rest = enrichRun.stop ? [] : list.filter(b => !done.has(b.id)); i = 0;
   for (const b of rest) {
@@ -1447,7 +1463,7 @@ async function runEnrich(again) {
     let best = null, how = '';
     for (const c of cands) { const j2 = judge(b, q, c); if (j2 === 'sure') { best = c; how = 'sure'; break; } if (j2 === 'maybe' && !best) { best = c; how = 'maybe'; } }
     if (how === 'sure') { buf.push(await applyPaper(b, best)); sure++; }
-    else if (how === 'maybe') { maybes.push({ b, c: best }); buf.push({ ...(books.get(b.id) || b), enrichTried: true }); }
+    else if (how === 'maybe') { maybes.push({ id: b.id, c: best }); saveMaybes(); buf.push({ ...(books.get(b.id) || b), enrichTried: true }); }
     else { none++; buf.push({ ...(books.get(b.id) || b), enrichTried: true }); }
     if (buf.length >= 15) flush();
     await sleep(250);
@@ -1455,19 +1471,7 @@ async function runEnrich(again) {
   flush();
   const stopped = enrichRun.stop; enrichRun = null; $('enStop').hidden = true; $('enAgain').disabled = false; updateEnrichInfo();
   $('enMsg').textContent = `${stopped ? '途中で止めました。' : '終わりました。'}${sure}冊に紙の版の情報を入れました。見つからなかった本：${none}冊。${maybes.length ? `下の${maybes.length}冊は、似た本が見つかったので確かめてください。` : ''}`;
-  if (maybes.length) {
-    $('enList').innerHTML = maybes.map((m, k) => `<label><input type="checkbox" data-k="${k}"><span>${esc(m.b.title)}<br><span class="note">→ ${esc(cleanTitle(m.c.title, m.c.vol))}・${esc(m.c.publisher || '')} ${esc(jdate(m.c.pubdate))}</span></span></label>`).join('');
-    $('enPrev').hidden = false; $('enApply').disabled = false; $('enApply').onclick = async () => {
-      // 押したらすぐ入れる（紙のISBN・出版社・出版日）。表紙やジャンルの細かい情報は、そのあと裏で1冊ずつ調べて足す
-      const pick = [...$('enList').querySelectorAll('input:checked')].map(x => maybes[+x.dataset.k]); if (!pick.length) return;
-      $('enApply').disabled = true; const up = [];
-      for (const m of pick) up.push(await applyPaper(m.b, m.c, true));
-      putMany(up); $('enPrev').hidden = true; toast(`${up.length}冊に紙の版の情報を入れました。表紙などは裏で調べて足していきます`);
-      const buf = [];
-      for (const m of pick) { const b = books.get(m.b.id); if (!b) continue; buf.push(await applyPaper(b, m.c)); if (buf.length >= 10) putMany(buf.splice(0)); }
-      if (buf.length) putMany(buf);
-    };
-  }
+  saveMaybes(); showMaybes();
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -1542,7 +1546,7 @@ function regroup(onlyAuto) {
   const out = [];
   for (const b of books.values()) {
     const p = parseSeries(b.title);
-    // 前の読み方で「1」のような数字だけのシリーズにされていた本（『1984』など）は、シリーズから外す
+    // 前の読み方で「1」のような数字だけのシリーズにされていた本（書名が数字だけの本など）は、シリーズから外す
     if (!p.series) { if (onlyAuto === 'empty' && /^\d{1,2}$/.test(nfkc(b.series || '').trim())) out.push({ ...b, series: '', vol: null }); continue; }
     if (onlyAuto === 'empty' ? (b.series && !/^[\d\s]+$/.test(nfkc(b.series)) && !EDITION_ONLY.test(b.series)) : onlyAuto && !b.asin) continue;
     if (norm(p.series) !== norm(b.series) || (p.vol && p.vol !== b.vol)) out.push({ ...b, series: p.series, vol: p.vol ?? b.vol });
