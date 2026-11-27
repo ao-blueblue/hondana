@@ -152,6 +152,8 @@ body:has(.selbar:not([hidden])) .toast{bottom:calc(150px + var(--sb))}
 .toast{position:fixed;left:50%;bottom:calc(90px + var(--sb));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;display:none;gap:14px;align-items:center;z-index:30;max-width:min(92vw,420px);width:max-content;font-size:14px}
 .fsel{position:fixed;left:max(18px,calc(50% - 362px));bottom:calc(20px + var(--sb));height:56px;min-width:56px;padding:0 18px;border-radius:999px;border:1px solid var(--line2);background:var(--p2);color:#c9cfdc;font:700 15px var(--sans);box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:5}
 .tile.flash .cv,.tile.flash .stack{animation:flash 1.6s ease 2}@keyframes flash{0%,100%{box-shadow:0 0 0 0 rgba(210,176,106,0)}50%{box-shadow:0 0 0 4px var(--gold)}}
+/* 下に浮かぶボタン（読み取りを終わる・保存）：シートをスクロールしても、いつも画面の下に見えている */
+.floatbar{position:sticky;bottom:calc(-24px - var(--sb));z-index:5;margin:14px -20px calc(-24px - var(--sb));padding:10px 20px calc(12px + var(--sb));background:linear-gradient(rgba(14,21,38,0),var(--bg) 14px)}
 #vScan .sheet{border-top:3px solid var(--gold)}#vScan[data-mode=check] .sheet{border-top-color:var(--blue)}#vScan[data-mode=sell] .sheet{border-top-color:#d46a6a}
 #vScan[data-mode=check] #scanT{color:var(--blue)}#vScan[data-mode=sell] #scanT{color:#e88a8a}
 #scanMode button[data-m=add][aria-pressed=true]{background:var(--gold)}#scanMode button[data-m=sell][aria-pressed=true]{background:#d46a6a}
@@ -210,7 +212,7 @@ textarea{resize:vertical}
       <button class="btn" id="toManual">手で入力する</button>
     </div>
     <input type="file" id="photoIn" accept="image/*" hidden>
-    <div class="row" style="margin-top:10px"><button class="btn gold" data-close>終わる</button></div>
+    <div class="row floatbar"><button class="btn gold" data-close>読み取りを終わる</button></div>
   </div>
 </div>
 
@@ -248,7 +250,7 @@ textarea{resize:vertical}
       </div>
     </div>
     <p class="msg" id="editMsg" aria-live="polite"></p>
-    <div class="row" style="margin-top:14px"><button type="submit" class="btn gold">保存</button></div>
+    <div class="row floatbar"><button type="submit" class="btn gold">保存</button></div>
   </form>
 </div>
 
@@ -275,7 +277,7 @@ textarea{resize:vertical}
     <button class="opt" id="mExport"><span><b>CSVで書き出す</b><span>表計算ソフトでも開ける形。写真の表紙は入りません</span></span></button>
     <button class="opt" id="mRestore"><span><b>バックアップから戻す</b><span>まるごとバックアップやCSVを読み込みます（登録済みの本は飛ばします）</span></span></button>
     <input type="file" id="fileIn" accept=".csv,.json,.txt,text/csv,application/json" hidden>
-    <p class="note" style="margin-bottom:4px">バージョン 3.7.3</p>
+    <p class="note" style="margin-bottom:4px">バージョン 3.7.4</p>
     <p class="note">本のデータはこのiPhoneの中だけに保存されます。書名を調べるときだけ、ISBNを openBD・Google Books・国立国会図書館に問い合わせます。</p>
   </div>
 </div>
@@ -407,6 +409,6 @@ textarea{resize:vertical}
 <datalist id="places"></datalist><datalist id="soldTos"></datalist>
 <div class="toast" id="toast" role="status"><span id="tMsg"></span><button id="tGo" hidden>見る</button><button id="tUndo" hidden>元に戻す</button></div>
 
-<script src="app.js?v=3.7.3"></script>
+<script src="app.js?v=3.7.4"></script>
 </body>
 </html>

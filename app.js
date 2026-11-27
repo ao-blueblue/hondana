@@ -802,6 +802,9 @@ function rebuy(old, extra) {
   for (const k of ['title', 'author', 'publisher', 'isbn', 'pisbn', 'asin', 'series', 'vol', 'genre', 'genreSet', 'pubdate', 'cover', 'listPrice', 'format', 'folder']) nb[k] = old[k];
   Object.assign(nb, extra || {}); put(nb); return nb;
 }
+// 紙の本と同じ本（同じシリーズの同じ巻、または同じ書名）を電子書籍で持っているか。番号でつながっていない電子書籍も見つけるため
+function eCopiesOf(b) { const k = sibKey(b); if (k.length < 3) return []; return [...books.values()].filter(x => x.id !== b.id && x.format !== '紙' && x.status !== 'sold' && !x.trial && sibKey(x) === k); }
+const eCopyNote = es => es.length ? `電子書籍で持っています（${[...new Set(es.map(x => x.format))].join('・')}）` : '';
 async function onCheckIsbn(isbn) {
   const same = [...books.values()].filter(x => x.isbn === isbn || x.pisbn === isbn), own = same.filter(x => x.status !== 'sold');
   const li = document.createElement('li'); li.className = 'chk-res';
@@ -816,8 +819,9 @@ async function onCheckIsbn(isbn) {
     scanSay(`ISBN ${isbn} を調べています…`); const r = await lookup(isbn), nb = bookFromLookup(isbn, r, { format: '紙' });
     li.innerHTML = `<div class="mini">${coverHtml(nb)}</div><span style="flex:1"><span class="no">持っていません</span><br><span class="t"></span></span><button class="btn" style="min-height:34px;flex:none;padding:0 10px;font-size:13px">登録する</button>`;
     li.querySelector('.t').textContent = (nb.title || 'ISBN ' + isbn) + (nb.listPrice != null ? `（定価${yen(nb.listPrice)}）` : '');
+    const ec = eCopiesOf(nb); if (ec.length) { const no = li.querySelector('.no'); no.textContent = eCopyNote(ec); no.className = 'yes'; }
     li.querySelector('button').onclick = e => { const g = $('scanGenre').value; put({ ...nb, ...(g ? { genre: g } : {}) }); e.target.disabled = true; e.target.textContent = '登録しました'; scanSay(`「${nb.title || 'ISBN ' + isbn}」を登録しました`); };
-    scanSay('持っていません', true);
+    if (eCopiesOf(nb).length) scanSay(`紙では持っていませんが、${eCopyNote(eCopiesOf(nb))}`, true); else scanSay('持っていません', true);
   }
   $('scanList').prepend(li); while ($('scanList').children.length > 8) $('scanList').lastElementChild.remove();
 }
@@ -949,6 +953,7 @@ async function onIsbn(isbn) {
   li.querySelector('[data-undo]').onclick = () => { removeBook(b.id, true); li.remove(); scanCount = Math.max(0, scanCount - 1); if (lastAdded?.id === b.id) lastAdded = null; scanSay('取り消しました。次の本をどうぞ。'); };
   li.querySelector('[data-fix]').onclick = () => { const x = books.get(b.id); if (!x) return; closeV('vScan'); openEdit(x); };
   $('scanList').prepend(li);
+  const ec = eCopiesOf(b); if (ec.length) { scanSay(`${scanCount}冊目を登録しました。この本は${eCopyNote(ec)}。`, true); return; }
   scanSay(r ? `${scanCount}冊目を登録しました。次の本をどうぞ。` : `${scanCount}冊目を登録しました（書名が見つからなかったので、あとで編集してください）。`, !r);
 }
 async function decodeFile(file) {
@@ -1396,6 +1401,8 @@ function openPick(o) {
   pickCb = o.onPick; $('pickT').textContent = o.title;
   $('pickNote').textContent = o.note || ''; $('pickNote').hidden = !o.note;
   if (o.filter) $('pickOpts').before($('pickInBox')); else $('pickOpts').after($('pickInBox'));
+  // 絞り込むとき、候補の並ぶ場所の高さを決めておく（打つたびに高さが変わって、フォームが飛ばないように）
+  $('pickOpts').style.cssText = o.filter ? 'height:min(40vh,320px);overflow-y:auto;overscroll-behavior:contain' : '';
   $('pickIn').oninput = o.filter ? () => { const q = norm($('pickIn').value); $('pickOpts').querySelectorAll('[data-v]').forEach(x => { x.hidden = !!q && !norm(x.dataset.v).includes(q); }); } : null;
   $('pickOpts').innerHTML = (o.options || []).map(([v, l]) => `<button class="opt" data-v="${esc(v)}" style="min-height:52px"><b>${esc(l)}</b></button>`).join('');
   $('pickInBox').hidden = !o.input;
@@ -1899,8 +1906,10 @@ $('mRegroup').onclick = () => { const n = regroup(false); closeV('vMenu'); toast
   ar.setAttribute('aria-hidden', 'true'); ar.textContent = '‹';
   ar.style.cssText = 'position:fixed;left:-44px;top:50%;width:44px;height:44px;margin-top:-22px;border-radius:50%;background:rgba(210,176,106,.9);color:#0e1526;font:700 28px/42px sans-serif;text-align:center;z-index:50;pointer-events:none;transition:opacity .15s;opacity:0';
   document.body.appendChild(ar);
-  const up = () => { const cs = document.querySelectorAll('.crumbs .back'); return cs[cs.length - 1] || null; };
-  document.addEventListener('touchstart', e => { const t = e.touches[0]; on = e.touches.length === 1 && t.clientX <= 24 && !document.querySelector('.veil.on') && !!up(); if (on) { sx = t.clientX; sy = t.clientY; } }, { passive: true });
+  // シートが開いていれば、いちばん上のシートを閉じる（本を追加・編集する画面は、打った内容が消えないように閉じない）。開いていなければ道すじの1つ上へ
+  const topVeil = () => { const vs = document.querySelectorAll('.veil.on'); return vs[vs.length - 1] || null; };
+  const up = () => { const v = topVeil(); if (v) return v.id === 'vEdit' ? null : { click: () => closeV(v.id) }; const cs = document.querySelectorAll('.crumbs .back'); return cs[cs.length - 1] || null; };
+  document.addEventListener('touchstart', e => { const t = e.touches[0]; on = e.touches.length === 1 && t.clientX <= 24 && !!up(); if (on) { sx = t.clientX; sy = t.clientY; } }, { passive: true });
   document.addEventListener('touchmove', e => { if (!on) return; const t = e.touches[0], dx = t.clientX - sx, dy = Math.abs(t.clientY - sy); if (dy > 60 && dy > dx) { on = false; ar.style.opacity = 0; return; } const k = Math.max(0, Math.min(dx, 100)); ar.style.left = (k - 44) + 'px'; ar.style.opacity = k > 10 ? (k >= 80 ? 1 : .6) : 0; }, { passive: true });
   document.addEventListener('touchend', e => { if (!on) return; on = false; const t = e.changedTouches[0], dx = t.clientX - sx, dy = Math.abs(t.clientY - sy); ar.style.opacity = 0; ar.style.left = '-44px'; if (dx >= 80 && dy < 60) up()?.click(); }, { passive: true });
   document.addEventListener('touchcancel', () => { on = false; ar.style.opacity = 0; ar.style.left = '-44px'; }, { passive: true });
