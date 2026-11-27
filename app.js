@@ -5,7 +5,8 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const nfkc = s => String(s || '').normalize('NFKC');
 // 「漢字(かんじ)」のような読み仮名は外して扱う（漢字のすぐ後ろの、かなだけのかっこ）
-const RUBY = /([\u3400-\u9FFF々〆ヵヶ])[（(]([ぁ-ゖァ-ヺー・ 　]{1,12})[)）]/g;
+// 読み仮名「漢字（かんじ）」。「漢字 (かんじ) 文字」のように前後に空白があっても読み仮名として外す
+const RUBY = /([\u3400-\u9FFF々〆ヵヶ])[ 　]?[（(]([ぁ-ゖァ-ヺー・ 　]{1,12})[)）][ 　]?/g;
 const unruby = s => String(s || '').replace(RUBY, '$1');
 const norm = s => unruby(nfkc(s)).toLowerCase().replace(/[\s・:：\-－―‐()（）\[\]［］【】「」『』〈〉《》!！?？.,、。~〜'"]/g, '');
 const newId = () => 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -108,7 +109,8 @@ const seriesKey = b => norm(b.series || '');
 const KEY = 'hondana.books';
 let books = new Map();
 function migrateOld(list) {
-  return list.map(o => ({ id: o.id || newId(), title: o.title || '', author: o.author || '', publisher: o.publisher || '', isbn: o.isbn || '', asin: o.asin || '',
+  // 知らない項目（バーコード・紙の版の書名・直した日時など）も落とさずに残す
+  return list.map(o => ({ ...o, id: o.id || newId(), title: o.title || '', author: o.author || '', publisher: o.publisher || '', isbn: o.isbn || '', asin: o.asin || '',
     series: o.series ?? parseSeries(o.title).series, vol: o.vol ?? parseSeries(o.title).vol, genre: o.genre || genreFromText(o.title) || 'その他',
     format: o.format || '紙', place: o.place || '', status: o.status === 'sold' ? 'sold' : 'own',
     read: normRead(o.read), readAt: normRead(o.read) === '読んだ' ? (o.readAt || '') : '', pubdate: o.pubdate || '', boughtAt: o.boughtAt || dstr(o.addedAt) || today(),
@@ -145,12 +147,12 @@ const getDel = () => delSet || (delSet = (() => { try { return new Set(JSON.pars
 function rememberDeleted(list) { const d = getDel(); list.forEach(b => delKeys(b).forEach(k => d.add(k))); lsSet('hondana.deleted', JSON.stringify([...d])); }
 function forgetDeleted(list) { const d = getDel(); if (!d.size) return; let ch = false; list.forEach(b => delKeys(b).forEach(k => { if (d.delete(k)) ch = true; })); if (ch) lsSet('hondana.deleted', JSON.stringify([...d])); }
 const wasDeleted = b => { const d = getDel(); return d.size > 0 && delKeys(b).some(k => d.has(k)); };
-function putMany(list) {
+function putMany(list, keepTime) {
   sibIx = null; twinIx = null; forgetDeleted(list.filter(b => !books.has(b.id))); const now = Date.now(), fresh = list.filter(b => !books.has(b.id) && !b.trial && b.status !== 'sold' && b.series);
   // 紙の版が見つかった本は、「表紙なし」の印を外して表紙を探し直す
   let nc = false; list.forEach(b => { const old = books.get(b.id); if (old && b.pisbn && b.pisbn !== old.pisbn) { workUrl.delete(b.id); if (noCov.delete(b.id)) nc = true; } }); if (nc) saveNoCov();
   if (trash && trash.length) { const ids = new Set(list.map(b => b.id)), n0 = trash.length; trash = trash.filter(t => !ids.has(t.b.id)); if (trash.length !== n0) saveTrash(); }
-  list.forEach(b => { b.updatedAt = now; books.set(b.id, b); });
+  list.forEach(b => { if (!(keepTime && b.updatedAt)) b.updatedAt = now; books.set(b.id, b); });
   if (fresh.length) untrialSeries(fresh, now);
   save(); render();
 }
@@ -246,7 +248,10 @@ async function fromOpenBD(isbn) {
   return { dupVol: /(\d{1,4})\s+\1$/.test(nfkc(s.title).trim()), title: cleanTitle(s.title, s.volume), author: cleanAuthor(s.author), publisher: s.publisher || '', pubdate: normPubdate(s.pubdate), cover: httpsUrl(s.cover), series: s.series || '', genre: genreFromC(ccode), listPrice };
 }
 async function fromNDL(isbn) {
-  const x = await ndlText('https://ndlsearch.ndl.go.jp/api/opensearch?isbn=' + isbn); const d = new DOMParser().parseFromString(x, 'application/xml'); const item = d.querySelector('item'); if (!item) return null;
+  let x = await ndlText('https://ndlsearch.ndl.go.jp/api/opensearch?isbn=' + isbn), d = new DOMParser().parseFromString(x, 'application/xml'), item = d.querySelector('item');
+  // 2007年より前の本は10桁のISBNで記録されていることがあるので、見つからなければ10桁でもう一度
+  if (!item && isbn10(isbn)) { x = await ndlText('https://ndlsearch.ndl.go.jp/api/opensearch?isbn=' + isbn10(isbn)); d = new DOMParser().parseFromString(x, 'application/xml'); item = d.querySelector('item'); }
+  if (!item) return null;
   const g = sel => { const e = item.getElementsByTagName(sel)[0]; return e ? e.textContent.trim() : ''; };
   const ids = [...item.getElementsByTagName('dc:identifier')].map(e => nfkc(e.textContent).replace(/[^0-9X]/gi, '').toUpperCase());
   if (!ids.some(v => v === isbn || v === isbn10(isbn))) return null;
@@ -1028,10 +1033,12 @@ $('fileIn').addEventListener('change', async () => {
       let j = JSON.parse(text);
       if (j && j.app === 'hondana' && Array.isArray(j.books)) {
         const seen0 = new Set();
-        cands = migrateOld(j.books).filter(b => !seen0.has(b.id) && seen0.add(b.id)).map(b => ({ b, dup: books.get(b.id) || findDup(b), photo: (j.covers || {})[b.id] || null }));
+        // 同じ本がこちらにもあって、バックアップのほうがあとで直されていたら、新しいほうに置き換える（スマホとパソコンで行き来できるように）
+        cands = migrateOld(j.books).filter(b => !seen0.has(b.id) && seen0.add(b.id)).map(b => { const dup = books.get(b.id) || findDup(b); return { b, dup, newer: !!(dup && dup.id === b.id && (b.updatedAt || 0) > (dup.updatedAt || 0)), photo: (j.covers || {})[b.id] || null }; });
         if (j.lists) { (j.lists.formats || []).forEach(f => { if (f && !FORMATS.includes(f)) FORMATS.splice(FORMATS.length - 1, 0, f); }); (j.lists.genres || []).forEach(g => { if (g && !GENRES.includes(g)) GENRES.splice(GENRES.length - 1, 0, g); }); saveLists(); refreshOptions(); }
         if (j.series && typeof j.series === 'object') { for (const [k, v] of Object.entries(j.series)) if (!serInfo[k] && v && +v.total > 0) serInfo[k] = { total: +v.total }; saveSerInfo(); }
-        $('impT').textContent = 'まるごとバックアップから戻す'; $('pasteBox').hidden = true; $('impMsg').textContent = Object.keys(j.covers || {}).length ? '写真の表紙も一緒に戻します。' : '';
+        const nNew = cands.filter(c => c.newer).length;
+        $('impT').textContent = 'まるごとバックアップから戻す'; $('pasteBox').hidden = true; $('impMsg').textContent = (nNew ? `登録済みの本のうち、バックアップのほうがあとで直されている${nNew}冊は、「追加する」を押すと新しいほうに置き換えます。` : '') + (Object.keys(j.covers || {}).length ? '写真の表紙も一緒に戻します。' : '');
         showCands(); openV('vImp'); return;
       }
       if (!Array.isArray(j)) j = j.books || j.items || j.data || Object.values(j).find(Array.isArray) || [];
@@ -1136,9 +1143,10 @@ $('impAdd').onclick = async () => {
   const boxes = [...$('impList').querySelectorAll('input')], picked = boxes.filter(b => b.checked).map(b => cands[+b.dataset.i]), sel = picked.map(c => c.b);
   // 写真だけ消えている既存の本にも、写真を戻す
   for (const c of cands) if (c.photo && c.dup && c.dup.id === c.b.id && !photos.has(c.b.id)) { try { await setPhoto(c.b.id, await (await fetch(c.photo)).blob()); } catch (e) {} }
-  const upd = [];
+  const upd = [], newer = [];
   const squash = x => String(x || '').replace(/[・、,\s]/g, '');
   for (const c of cands) {
+    if (c.newer && books.has(c.b.id)) { newer.push({ ...c.b }); continue; }
     if (!c.dup || !books.has(c.dup.id)) continue;
     const cur = books.get(c.dup.id), nb = { ...cur }; let ch = false;
     if (c.b.read === '読んだ' && !cur.read) { nb.read = '読んだ'; ch = true; }
@@ -1150,7 +1158,8 @@ $('impAdd').onclick = async () => {
     if (ch) upd.push(nb);
   }
   if (upd.length) putMany(upd);
-  if (!sel.length) { render(); closeV('vImp'); if (upd.length) toast(`登録済みの${upd.length}冊を更新しました（${cands.some(c => c.page) ? '購入日・出版社' : '読んだ・著者名'}）`); return; }
+  if (newer.length) putMany(newer, true); // 直した日時はバックアップのまま残す（行き来しても新しさがずれないように）
+  if (!sel.length) { render(); closeV('vImp'); if (upd.length || newer.length) toast(newer.length ? `${newer.length}冊を、あとで直したほうに置き換えました${upd.length ? `（ほかに${upd.length}冊を更新）` : ''}` : `登録済みの${upd.length}冊を更新しました（${cands.some(c => c.page) ? '購入日・出版社' : '読んだ・著者名'}）`); return; }
   for (const c of picked) if (c.photo) { try { await setPhoto(c.b.id, await (await fetch(c.photo)).blob()); } catch (e) {} }
   if (!$('pasteBox').hidden) learn(boxes.filter(b => !b.checked).map(b => cands[+b.dataset.i]).filter(c => !c.dup).map(c => c.b.title));
   const now = Date.now(); sel.forEach((b, k) => { if (!b.addedAt || b.addedAt > now) b.addedAt = now - k; });
@@ -1318,8 +1327,10 @@ $('selBar').addEventListener('click', async e => {
   else if (act === 'series') {
     const cnt = new Map(); list.forEach(b => { if (b.series) cnt.set(b.series, (cnt.get(b.series) || 0) + 1); });
     const names = [...cnt].sort((a, b) => b[1] - a[1]).map(([n]) => n), guess = names[0] || suggestName(list);
-    openPick({ title: 'シリーズ名', options: names.slice(0, 8).map(n => [n, n]), note: '選んだ本を、同じシリーズ名にそろえます。下の候補から選ぶか、名前を打って「決定」。',
-      input: { placeholder: 'シリーズ名', value: guess }, onPick: v => { v = String(v).trim(); if (!v) return;
+    openPick({ title: 'シリーズ名', options: [...names.slice(0, 8).map(n => [n, n]), ...(names.length ? [['__none__', 'シリーズから外す（シリーズ名と巻数を空にする）']] : [])], note: '選んだ本を、同じシリーズ名にそろえます。下の候補から選ぶか、名前を打って「決定」。',
+      input: { placeholder: 'シリーズ名', value: guess }, onPick: v => { v = String(v).trim();
+        if (v === '__none__') { applySel(() => ({ series: '', vol: null }), '{n}冊をシリーズから外しました'); return; }
+        if (!v) return;
         setTimeout(() => openPick({ title: '巻数はどうしますか？', options: [['keep', '巻数はそのまま'], ['pub', '発売日の古い順に1から振り直す']], onPick: how => {
           const order = new Map(); if (how === 'pub') list.slice().sort((a, b) => (a.pubdate || '9999').localeCompare(b.pubdate || '9999') || (a.vol || 0) - (b.vol || 0) || String(a.title).localeCompare(String(b.title), 'ja')).forEach((b, i) => order.set(b.id, i + 1));
           applySel(b => ({ series: v, ...(how === 'pub' ? { vol: order.get(b.id) } : {}) }), `{n}冊を「${v}」のシリーズにしました`, () => () => go('#s-' + encodeURIComponent(norm(v)))); } }), 60); } });
@@ -1435,22 +1446,34 @@ function renderFolder(key) {
 }
 
 /* 書名の後ろに付いたシリーズ名（「○○傑作集」「○○辞典シリーズ」など）から、まとまりの候補を探す */
+// 版や売り文句の言葉（「完全保存版」「第2版」など）。これだけが同じ本は仲間にしない
+const PROMO_RE = /^(完全保存版|保存版|永久保存版|決定版|完全版|新装版|新装改訂版|改訂版|改訂新版|新版|増補版|増補改訂版|第\d+版|愛蔵版|普及版|文庫版|新書版|特装版|限定版|カラー版|電子版|電子特別版|特別版|上|中|下|上巻|中巻|下巻)$/;
+const PUNCT_HEAD = /^[\s:：・\-－―~〜～/／|｜]+/;
+function stripPromo(t) { let x = t.trim(); for (let i = 0; i < 3; i++) { const y = x.replace(/[\s:：・]*(完全保存版|保存版|永久保存版|決定版|新装改訂版|改訂新版|増補改訂版|増補版|改訂版|新装版|第\d+版)$/, '').trim(); if (y === x) break; x = y; } return x; }
 function folderCandidates() {
-  const live = [...books.values()].filter(b => !b.folder), bySuf = new Map();
+  const live = [...books.values()].filter(b => !b.folder), bySuf = new Map(), byPre = new Map();
   for (const b of live) {
     let t = nfkc(b.title).replace(/【[^】]*】|［[^］]*］|\[[^\]]*\]/g, ' ');
     for (let i = 0; i < 3; i++) { const m = t.match(/\s*[(（]([^()（）]*)[)）]\s*$/); if (!m) break; t = t.slice(0, m.index); }
-    const w = t.trim().split(/\s+/); if (w.length < 2) continue;
+    t = stripPromo(t);
+    const w = t.trim().split(/\s+/).filter(x => !PUNCT_HEAD.test(x) || x.replace(PUNCT_HEAD, '')).map(x => x.replace(PUNCT_HEAD, '')).filter(Boolean);
+    if (w.length < 2) continue;
     for (let k = 1; k <= Math.min(3, w.length - 1); k++) {
-      const suf = w.slice(-k).join(' '); if (suf.length < 4 || /^[\d\s.]/.test(suf)) continue;
+      const suf = w.slice(-k).join(' ').replace(PUNCT_HEAD, ''); if (suf.length < 4 || /^[\d\s.]/.test(suf) || PROMO_RE.test(suf)) continue;
       if (!bySuf.has(suf)) bySuf.set(suf, new Map()); bySuf.get(suf).set(b.id, b);
     }
+    // 題名の前が同じ本（「作品名 ○○」と「作品名 △△」）。シリーズのない本だけ
+    const pre = w[0]; if (!b.series && pre.length >= 4 && /[\u3400-\u9fff\u30a1-\u30fa]/.test(pre) && !PROMO_RE.test(pre)) { if (!byPre.has(pre)) byPre.set(pre, new Map()); byPre.get(pre).set(b.id, b); }
   }
   let out = [];
   for (const [suf, m] of bySuf) {
     const bs = [...m.values()], bases = new Set(bs.map(b => seriesKey(b) || norm(b.title.replace(suf, ''))));
     if (bs.length >= 2 && bases.size >= 2 && bs.every(b => !norm(b.series).includes(norm(suf)))) out.push({ name: suf.replace(/^NHK/, 'NHK '), books: bs, sig: bs.map(b => b.id).sort().join() });
   }
+  for (const [pre, m] of byPre) { const bs = [...m.values()]; if (bs.length >= 2) out.push({ name: pre, books: bs, sig: bs.map(b => b.id).sort().join() }); }
+  // 同じ作者の本（漫画・小説以外。技法書など、シリーズになっていない本が2冊以上）
+  const byAu = new Map(); for (const b of live) { if (b.series || b.genre === '漫画' || b.genre === '小説' || b.trial || b.status === 'sold') continue; const a = authorsOf(b.author)[0]; if (!a) continue; if (!byAu.has(a)) byAu.set(a, []); byAu.get(a).push(b); }
+  for (const [a, bs] of byAu) if (bs.length >= 2) out.push({ name: a + 'の本', books: bs, sig: bs.map(b => b.id).sort().join(), author: a });
   // 外伝・続編・超合本版など：シリーズ名の頭が同じもの（「作品名」と「作品名 外伝」、「作品名」と「作品名 ACT II」）
   const bySer = new Map(); for (const b of live) if (b.series) { if (!bySer.has(b.series)) bySer.set(b.series, []); bySer.get(b.series).push(b); }
   const names = [...bySer.keys()].sort((a, b) => a.length - b.length);
@@ -1469,8 +1492,8 @@ $('mFolders').onclick = () => {
   const cands = folderCandidates();
   openBulk({
     title: 'まとまりの候補', action: 'まとめる',
-    note: '書名の後ろに同じシリーズ名が付いている本や、「作品名」と「作品名 外伝」のように外伝・続編・合本版と思われるシリーズを集めました。チェックした候補が、それぞれひとつのまとまりになります。名前はあとで変えられます。',
-    items: cands.map(c => ({ b: { id: c.sig, title: `${c.name}（${c.books.length}冊）`, isbn: '' }, tag: c.spin ? `${c.spin}シリーズ` : c.books.slice(0, 2).map(b => (b.series || b.title).slice(0, 10)).join('、') + (c.books.length > 2 ? '…' : ''), checked: false, c, key: 'f:' + c.name })), dismiss: 'folder',
+    note: '書名の前や後ろに同じ言葉が付いている本、「作品名」と「作品名 外伝」のように外伝・続編・合本版と思われるシリーズ、同じ作者の技法書などを集めました。「完全保存版」「第2版」のような版の言葉だけが同じ本は、仲間にしていません。チェックした候補が、それぞれひとつのまとまりになります。名前はあとで変えられます。',
+    items: cands.map(c => ({ b: { id: c.sig, title: `${c.name}（${c.books.length}冊）`, isbn: '' }, tag: c.spin ? `${c.spin}シリーズ` : c.author ? `作者：${c.author}` : c.books.slice(0, 2).map(b => (b.series || b.title).slice(0, 10)).join('、') + (c.books.length > 2 ? '…' : ''), checked: false, c, key: 'f:' + c.name })), dismiss: 'folder',
     run: sel2 => { const picked = cands.filter(c => sel2.some(x => x.id === c.sig)), done = new Set(), up = [];
       for (const c of picked) for (const b of c.books) if (!done.has(b.id)) { done.add(b.id); up.push({ ...b, folder: c.name }); }
       putMany(up); toast(`${picked.length}個のまとまりを作りました`); },
@@ -1480,12 +1503,18 @@ $('mFolders').onclick = () => {
 /* ---------- ジャンル・ストアを編集 ---------- */
 function renderLists() {
   const cnt = (k, v) => [...books.values()].filter(b => (b[k] || '') === v).length;
-  const row = (k, v, fixed) => { const n = cnt(k, v); return `<div class="ir" style="align-items:center"><span style="color:var(--ink)">${esc(v)} <span class="note">${n}冊</span></span>${fixed ? '<span class="note">固定</span>' : n ? '<span class="note">使用中</span>' : `<button class="btn danger" data-del="${k}" data-v="${esc(v)}" style="min-height:36px">削除</button>`}</div>`; };
+  // 上へ・下へで並び順を入れ替えられる（「その他」はいちばん下のまま）
+  const mv = (k, v, arr) => { const i = arr.indexOf(v), last = k === 'genre' ? arr.length - 2 : arr.length - 1; if (k === 'genre' && v === 'その他') return '';
+    return `<span style="display:inline-flex;gap:4px;margin-right:6px"><button class="btn" data-mv="${k}" data-v="${esc(v)}" data-d="-1" ${i <= 0 ? 'disabled' : ''} aria-label="上へ" style="min-height:36px;min-width:40px;padding:0">↑</button><button class="btn" data-mv="${k}" data-v="${esc(v)}" data-d="1" ${i >= last ? 'disabled' : ''} aria-label="下へ" style="min-height:36px;min-width:40px;padding:0">↓</button></span>`; };
+  const row = (k, v, fixed) => { const n = cnt(k, v), arr = k === 'genre' ? GENRES : FORMATS; return `<div class="ir" style="align-items:center"><span style="color:var(--ink);flex:1">${esc(v)} <span class="note">${n}冊</span></span>${mv(k, v, arr)}${fixed ? '<span class="note">固定</span>' : n ? '<span class="note">使用中</span>' : `<button class="btn danger" data-del="${k}" data-v="${esc(v)}" style="min-height:36px">削除</button>`}</div>`; };
   $('listGenres').innerHTML = GENRES.map(g => row('genre', g, g === 'その他')).join('');
   $('listFormats').innerHTML = FORMATS.map(f => row('format', f, f === '紙')).join('');
 }
 $('mLists').onclick = () => { renderLists(); closeV('vMenu'); openV('vLists'); };
 $('vLists').addEventListener('click', e => {
+  const m = e.target.closest('[data-mv]');
+  if (m) { const arr = m.dataset.mv === 'genre' ? GENRES : FORMATS, i = arr.indexOf(m.dataset.v), j = i + +m.dataset.d;
+    if (i >= 0 && j >= 0 && j < arr.length && !(m.dataset.mv === 'genre' && arr[j] === 'その他')) { [arr[i], arr[j]] = [arr[j], arr[i]]; saveLists(); refreshOptions(); renderLists(); render(); } return; }
   const t = e.target.closest('[data-del]'); if (!t) return;
   const arr = t.dataset.del === 'genre' ? GENRES : FORMATS, i = arr.indexOf(t.dataset.v); if (i >= 0) arr.splice(i, 1);
   saveLists(); refreshOptions(); renderLists(); render();
@@ -1863,6 +1892,8 @@ load();
 // IndexedDB に引っ越し済み（または localStorage が空でそちらにある）ときは、そちらから読む
 if (inIdb() || !books.size) { const ok = await loadFromIdb(); if (ok && !inIdb()) lsSet('hondana.store', 'idb'); }
 if (lsGet('hondana.regroupVer', '') !== '2') { lsSet('hondana.regroupVer', '2'); setTimeout(() => { const n = regroup(true); if (n) toast(`Kindleの本 ${n}冊をシリーズにまとめ直しました`); }, 0); }
+// 読み仮名の前後に空白がある書き方もそろえる（3.7.1）
+if (lsGet('hondana.rubyFix2', '') !== '1') { lsSet('hondana.rubyFix2', '1'); lsSet('hondana.rubyFix', ''); }
 if (lsGet('hondana.rubyFix', '') !== '1') { lsSet('hondana.rubyFix', '1'); setTimeout(() => { const up = [...books.values()].filter(b => b.series && /[（(][ぁ-ゖァ-ヺー・ 　]{1,12}[)）]/.test(nfkc(b.series)) && unruby(nfkc(b.series)) !== nfkc(b.series)).map(b => ({ ...b, series: unruby(nfkc(b.series)).trim() })); if (up.length) { putMany(up); toast(`読み仮名の入ったシリーズ名 ${up.length}冊分をそろえました`); } }, 150); }
 if (lsGet('hondana.freeTrial', '') !== '1') { lsSet('hondana.freeTrial', '1'); setTimeout(() => { const up = [...books.values()].filter(b => !b.trial && b.status !== 'sold' && b.format !== '紙' && FREE_TITLE.test(nfkc(b.title))).map(b => ({ ...b, trial: true })); if (up.length) { putMany(up); toast(`書名に「無料」「お試し版」とある電子書籍 ${up.length}冊を、お試しにしました`); } }, 100); }
 if (lsGet('hondana.regroupVer3', '') !== '1') { lsSet('hondana.regroupVer3', '1'); setTimeout(() => { const n = regroup('empty'); if (n) toast(`シリーズに入っていなかった本 ${n}冊を、シリーズにまとめました`); }, 50); }
@@ -1880,5 +1911,5 @@ try { navigator.storage?.persist?.(); } catch (e) {}
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 window.addEventListener('storage', e => { if (e.key === KEY) { load(); render(); } });
 })();
-window.__hondana = { books: () => [...books.values()], putMany, onJan, openScanTest: () => openV("vScan"), coverCands, parseSeries, genreFromC, priceCode, photos, noCov };
+window.__hondana = { books: () => [...books.values()], putMany, onJan, folderCandidates: () => folderCandidates(), fromNDL: i => fromNDL(i), openScanTest: () => openV("vScan"), coverCands, parseSeries, genreFromC, priceCode, photos, noCov };
 }
