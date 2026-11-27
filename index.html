@@ -118,7 +118,8 @@ label.f input[type=date],div.f input[type=date]{-webkit-appearance:none;appearan
 .msg{font-size:14px;margin:10px 0 0;min-height:1.4em;color:var(--mut)}
 .msg.warn{color:var(--blue);font-weight:700}
 .cam{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:2/1}
-.cam video{width:100%;height:100%;object-fit:cover;display:block}
+/* 映像は前と同じ4:3の大きさのまま、上下だけ枠で切って見せる（読み取りの細かさを変えないため） */
+.cam video{position:absolute;left:0;top:-25%;width:100%;height:150%;object-fit:cover;display:block}
 .cam .frame{position:absolute;left:8%;right:8%;top:20%;bottom:20%;border:2px solid var(--blue);border-radius:10px;box-shadow:0 0 0 999px rgba(0,0,0,.4)}
 .chk{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--mut);margin-top:12px;min-height:44px}
 .chk input{width:22px;height:22px;accent-color:var(--blue)}
@@ -274,7 +275,7 @@ textarea{resize:vertical}
     <button class="opt" id="mExport"><span><b>CSVで書き出す</b><span>表計算ソフトでも開ける形。写真の表紙は入りません</span></span></button>
     <button class="opt" id="mRestore"><span><b>バックアップから戻す</b><span>まるごとバックアップやCSVを読み込みます（登録済みの本は飛ばします）</span></span></button>
     <input type="file" id="fileIn" accept=".csv,.json,.txt,text/csv,application/json" hidden>
-    <p class="note" style="margin-bottom:4px">バージョン 3.7.2</p>
+    <p class="note" style="margin-bottom:4px">バージョン 3.7.3</p>
     <p class="note">本のデータはこのiPhoneの中だけに保存されます。書名を調べるときだけ、ISBNを openBD・Google Books・国立国会図書館に問い合わせます。</p>
   </div>
 </div>
@@ -406,6 +407,6 @@ textarea{resize:vertical}
 <datalist id="places"></datalist><datalist id="soldTos"></datalist>
 <div class="toast" id="toast" role="status"><span id="tMsg"></span><button id="tGo" hidden>見る</button><button id="tUndo" hidden>元に戻す</button></div>
 
-<script src="app.js?v=3.7.2"></script>
+<script src="app.js?v=3.7.3"></script>
 </body>
 </html>

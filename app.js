@@ -868,7 +868,7 @@ function stopScan() { clearTimeout(scanTimer); scanTimer = null; if (stream) { s
 // 画面の青い枠（少しゆとりを持たせる）が、カメラの映像のどこに当たるかを計算する。枠の外に写ったバーコードは読まない
 function frameInVideo(v) {
   const cw = v.clientWidth || 1, chh = v.clientHeight || 1, vw = v.videoWidth, vh = v.videoHeight, sc = Math.max(cw / vw, chh / vh), ox = (vw * sc - cw) / 2, oy = (vh * sc - chh) / 2;
-  const L = cw * .03, R = cw * .97, T = chh * .08, B = chh * .92; // カメラの映像を横長にしたので、枠のまわりを少し広めに読む
+  const L = cw * .03, R = cw * .97, T = chh * .22, B = chh * .78; // 映像の要素は4:3のまま（外枠で上下を隠しているだけ）なので、読む範囲も前と同じ
   return { x: Math.max(0, (L + ox) / sc), y: Math.max(0, (T + oy) / sc), w: Math.min(vw, (R - L) / sc), h: Math.min(vh, (B - T) / sc) };
 }
 // 読み間違いを防ぐため、同じ数字を続けて2回読めたときだけ受け付ける
