@@ -718,7 +718,7 @@ function openEdit(b, note) {
   $('editT').textContent = editing ? '編集' : '本を追加';
   $('fIsbn').value = v.isbn || ''; $('fTitle').value = v.title || ''; $('fAuthor').value = v.author || ''; $('fPub').value = v.publisher || '';
   $('fSeries').value = v.series || ''; $('fVol').value = v.vol || ''; $('fSeries').dataset.auto = seriesIsAuto(v) ? v.series : ''; $('fJan').value = v.jan || ''; $('fGenre').value = v.genre || 'その他'; $('fFmt').value = v.format || '紙';
-  $('fPubdate').value = v.pubdate || ''; $('fBought').value = v.boughtAt || today(); $('fPlace').value = v.place || ''; $('fRead').value = v.read || '';
+  $('fPubdate').value = v.pubdate || ''; $('fBought').value = v.boughtAt || today(); updBoughtBtns(); $('fPlace').value = v.place || ''; $('fRead').value = v.read || '';
   $('fList').value = v.listPrice ?? ''; $('fPaid').value = v.paid ?? ''; $('fPaid').dataset.auto = v.paidAuto ? '1' : '';
   $('fReadAt').value = v.readAt || ''; $('fMemo').value = v.memo || ''; $('fSoldAt').value = v.soldAt || ''; $('fSoldTo').value = v.soldTo || ''; $('fSoldPrice').value = v.soldPrice ?? '';
   $('soldBox').hidden = v.status !== 'sold'; $('fReadAtBox').hidden = $('fRead').value !== '読んだ';
@@ -727,6 +727,12 @@ function openEdit(b, note) {
 }
 // 出版日は数字だけで打てるように：「201907」→「2019-07」、「20190715」→「2019-07-15」
 function pubdateIn(v) { const d = nfkc(v).trim(); if (/^\d{6}$/.test(d)) return d.slice(0, 4) + '-' + d.slice(4); if (/^\d{8}$/.test(d)) return d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6); if (/^\d{4}$/.test(d)) return d; return d ? (normPubdate(d) || d) : ''; }
+// 購入日：「前と同じ日」で直前に入れた日、「今日」で今日に戻す（購入履歴を見ながら古い本を続けて入れるとき、毎回カレンダーを何年も戻さなくて済むように）
+const lastBought = () => lsGet('hondana.lastBought', '');
+const updBoughtBtns = () => { const l = lastBought(); $('fBSame').disabled = !l; $('fBSame').innerHTML = l ? `前と同じ日<br><span style="font-size:11px;opacity:.8">${esc(l.replace(/-/g, '/'))}</span>` : '前と同じ日'; };
+$('fBSame').onclick = () => { const l = lastBought(); if (l) $('fBought').value = l; };
+$('fBToday').onclick = () => { $('fBought').value = today(); };
+$('fBought').addEventListener('change', () => { if ($('fBought').value) lsSet('hondana.lastBought', $('fBought').value); updBoughtBtns(); });
 $('fPubdate').addEventListener('change', () => { $('fPubdate').value = pubdateIn($('fPubdate').value); });
 $('fRead').addEventListener('change', () => { $('fReadAtBox').hidden = $('fRead').value !== '読んだ'; });
 // シリーズ名が書名から自動で付けたものなら、書名を直したときにシリーズ名と巻数も読み直す（手で付けたシリーズ名はそのまま）
@@ -862,7 +868,7 @@ function stopScan() { clearTimeout(scanTimer); scanTimer = null; if (stream) { s
 // 画面の青い枠（少しゆとりを持たせる）が、カメラの映像のどこに当たるかを計算する。枠の外に写ったバーコードは読まない
 function frameInVideo(v) {
   const cw = v.clientWidth || 1, chh = v.clientHeight || 1, vw = v.videoWidth, vh = v.videoHeight, sc = Math.max(cw / vw, chh / vh), ox = (vw * sc - cw) / 2, oy = (vh * sc - chh) / 2;
-  const L = cw * .03, R = cw * .97, T = chh * .22, B = chh * .78;
+  const L = cw * .03, R = cw * .97, T = chh * .08, B = chh * .92; // カメラの映像を横長にしたので、枠のまわりを少し広めに読む
   return { x: Math.max(0, (L + ox) / sc), y: Math.max(0, (T + oy) / sc), w: Math.min(vw, (R - L) / sc), h: Math.min(vh, (B - T) / sc) };
 }
 // 読み間違いを防ぐため、同じ数字を続けて2回読めたときだけ受け付ける
@@ -1885,6 +1891,20 @@ function regroup(onlyAuto) {
   return out.length;
 }
 $('mRegroup').onclick = () => { const n = regroup(false); closeV('vMenu'); toast(n ? `${n}冊のシリーズをまとめ直しました` : 'まとめ直す本はありませんでした'); };
+
+/* ---------- 左端からなでて1つ上の画面へ戻る ---------- */
+// 画面の左端（24px以内）から右へ80px以上なでると、道すじのいちばん右（1つ上の画面）に戻る。シートが開いているときと、本棚の画面では何もしない
+{
+  let sx = 0, sy = 0, on = false; const ar = document.createElement('div');
+  ar.setAttribute('aria-hidden', 'true'); ar.textContent = '‹';
+  ar.style.cssText = 'position:fixed;left:-44px;top:50%;width:44px;height:44px;margin-top:-22px;border-radius:50%;background:rgba(210,176,106,.9);color:#0e1526;font:700 28px/42px sans-serif;text-align:center;z-index:50;pointer-events:none;transition:opacity .15s;opacity:0';
+  document.body.appendChild(ar);
+  const up = () => { const cs = document.querySelectorAll('.crumbs .back'); return cs[cs.length - 1] || null; };
+  document.addEventListener('touchstart', e => { const t = e.touches[0]; on = e.touches.length === 1 && t.clientX <= 24 && !document.querySelector('.veil.on') && !!up(); if (on) { sx = t.clientX; sy = t.clientY; } }, { passive: true });
+  document.addEventListener('touchmove', e => { if (!on) return; const t = e.touches[0], dx = t.clientX - sx, dy = Math.abs(t.clientY - sy); if (dy > 60 && dy > dx) { on = false; ar.style.opacity = 0; return; } const k = Math.max(0, Math.min(dx, 100)); ar.style.left = (k - 44) + 'px'; ar.style.opacity = k > 10 ? (k >= 80 ? 1 : .6) : 0; }, { passive: true });
+  document.addEventListener('touchend', e => { if (!on) return; on = false; const t = e.changedTouches[0], dx = t.clientX - sx, dy = Math.abs(t.clientY - sy); ar.style.opacity = 0; ar.style.left = '-44px'; if (dx >= 80 && dy < 60) up()?.click(); }, { passive: true });
+  document.addEventListener('touchcancel', () => { on = false; ar.style.opacity = 0; ar.style.left = '-44px'; }, { passive: true });
+}
 
 /* ---------- 起動 ---------- */
 (async () => {
